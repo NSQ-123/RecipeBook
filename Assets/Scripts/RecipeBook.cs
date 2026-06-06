@@ -3,40 +3,95 @@ using System.Text;
 
 namespace Game
 {
-    public class RecipeBook
+    
+    public struct Ingredient
     {
-        private struct Ingredient
-        {
-            public int ItemId;
-            public int Count;
+        public readonly int ItemId;
+        public readonly int Count;
 
-            public Ingredient(int itemId, int count)
-            {
-                ItemId = itemId;
-                Count = count;
-            }
+        public Ingredient(int itemId, int count)
+        {
+            ItemId = itemId;
+            Count = count;
+        }
+    }
+
+    public class RecipeDefinition
+    {
+        public readonly bool IsMaterial;
+        public readonly bool IsBaseMaterial;
+        public readonly List<Ingredient> Inputs;
+
+        public RecipeDefinition(bool isMaterial, bool isBaseMaterial, params Ingredient[] inputs)
+        {
+            IsMaterial = isMaterial;
+            IsBaseMaterial = isBaseMaterial;
+            Inputs = new List<Ingredient>(inputs);
+        }
+    }
+    
+    public class RecipeNode
+    {
+        public int Id {get; private set; }
+        public bool IsMaterial {get; private set; }
+        public bool IsBaseMaterial  {get; private set; }
+        public int ChildCount {get; private set; }
+        public RecipeNode Parent{get; private set; }
+        public List<RecipeNode> Children {get; private set; }
+        public bool IsOwn{get; private set; }
+        public bool IsOwnDirect { get; private set; }
+        public int NeededCount { get; private set; }
+        
+        public RecipeNode(int itemId, bool isMaterial, bool isBaseMaterial)
+        {
+            Id = itemId;
+            IsMaterial = isMaterial;
+            IsBaseMaterial = isBaseMaterial;
+            NeededCount = 1;
+        }
+        
+        public void AddChild(RecipeNode child)
+        {
+            Children ??= new List<RecipeNode>();
+            child.SetParent(this);
+            Children.Add(child);
+            ChildCount = Children.Count;
+        }
+        
+        public void SetParent(RecipeNode parent)
+        {
+            Parent = parent;
+        }
+        
+        public void SetOwn(bool isOwn, bool isOwnDirect = false)
+        {
+            IsOwn = isOwn;
+            IsOwnDirect = isOwnDirect;
         }
 
-        private class RecipeDefinition
+        public void SetNeededCount(int count)
         {
-            public bool IsMaterial;
-            public bool IsBaseMaterial;
-            public List<Ingredient> Inputs;
-
-            public RecipeDefinition(bool isMaterial, bool isBaseMaterial, params Ingredient[] inputs)
-            {
-                IsMaterial = isMaterial;
-                IsBaseMaterial = isBaseMaterial;
-                Inputs = new List<Ingredient>(inputs);
-            }
+            NeededCount = count;
         }
 
-        private static readonly Dictionary<int, RecipeDefinition> s_recipes = CreateRecipes();
-
-        public static RecipeNode CreateDefault()
+        public void Clear()
         {
-            return BuildRecipeTree(1005);
+            Id = 0;
+            IsMaterial = false;
+            IsBaseMaterial = false;
+            ChildCount = 0;
+            Parent = null;
+            NeededCount = 0;
+            Children?.Clear();
+            IsOwn = false;
+            IsOwnDirect = false;
         }
+    }
+    
+    
+    public static class RecipeBook
+    {
+        private static readonly Dictionary<int, RecipeDefinition> s_recipes = new  Dictionary<int, RecipeDefinition>();
 
         public static RecipeNode BuildRecipeTree(int itemId, int amount = 1)
         {
@@ -46,13 +101,6 @@ namespace Game
             }
 
             return BuildNode(itemId, amount);
-        }
-
-        public static RecipeNode BuildRecipeTree(int itemId, int amount, IDictionary<int, int> ownedItems)
-        {
-            RecipeNode root = BuildRecipeTree(itemId, amount);
-            MarkOwnedItems(root, ownedItems);
-            return root;
         }
 
         public static void MarkOwnedItems(RecipeNode root, IDictionary<int, int> ownedItems)
@@ -69,6 +117,14 @@ namespace Game
             MarkOwnedRecursive(root, remaining, false);
         }
 
+        public static RecipeNode BuildRecipeTree(int itemId, int amount, IDictionary<int, int> ownedItems)
+        {
+            RecipeNode root = BuildRecipeTree(itemId, amount);
+            MarkOwnedItems(root, ownedItems);
+            return root;
+        }
+        
+        
         public static string PrintTree(RecipeNode root)
         {
             if (root == null)
@@ -140,6 +196,10 @@ namespace Game
         {
             RecipeDefinition def;
             bool hasRecipe = s_recipes.TryGetValue(itemId, out def);
+            if (!hasRecipe)
+            {
+                throw new KeyNotFoundException($"No recipe found for itemId {itemId}");
+            }
             bool isBaseMaterial = !hasRecipe || def.IsBaseMaterial || def.Inputs.Count == 0;
             bool isMaterial = hasRecipe && def.IsMaterial;
 
@@ -281,8 +341,22 @@ namespace Game
             }
         }
 
-        private static Dictionary<int, RecipeDefinition> CreateRecipes()
+
+        #region 创建测试配方
+        
+        private static Dictionary<int, RecipeDefinition> CreateTestRecipes()
         {
+            
+            void AddMergeChain(Dictionary<int, RecipeDefinition> map, int startId, int endId, bool isMaterial)
+            {
+                map[startId] = new RecipeDefinition(isMaterial, true);
+
+                for (int itemId = startId + 1; itemId <= endId; itemId++)
+                {
+                    map[itemId] = new RecipeDefinition(isMaterial, false, new Ingredient(itemId - 1, 2));
+                }
+            }
+            
             var map = new Dictionary<int, RecipeDefinition>();
 
             AddMergeChain(map, 1001, 1010, true);
@@ -313,77 +387,9 @@ namespace Game
 
             return map;
         }
-
-        private static void AddMergeChain(Dictionary<int, RecipeDefinition> map, int startId, int endId, bool isMaterial)
-        {
-            map[startId] = new RecipeDefinition(isMaterial, true);
-
-            for (int itemId = startId + 1; itemId <= endId; itemId++)
-            {
-                map[itemId] = new RecipeDefinition(isMaterial, false, new Ingredient(itemId - 1, 2));
-            }
-        }
+        
+        #endregion
+        
     }
-
-
-    public class RecipeNode
-    {
-        public int Id {get; private set; }
-        public bool IsMaterial {get; private set; }
-        public bool IsBaseMaterial  {get; private set; }
-        public int ChildCount {get; private set; }
-        public RecipeNode Parent{get; private set; }
-        public List<RecipeNode> Children {get; private set; }
-        public bool IsOwn{get; private set; }
-        public bool IsOwnDirect { get; private set; }
-        public int NeededCount { get; private set; }
-        public bool IsLeaf => Children == null || Children.Count == 0;
-        
-        public RecipeNode(int itemId, bool isMaterial, bool isBaseMaterial)
-        {
-            Id = itemId;
-            IsMaterial = isMaterial;
-            IsBaseMaterial = isBaseMaterial;
-            NeededCount = 1;
-        }
-        
-        public void AddChild(RecipeNode child)
-        {
-            Children ??= new List<RecipeNode>();
-            child.SetParent(this);
-            Children.Add(child);
-            ChildCount = Children.Count;
-        }
-        
-        public void SetParent(RecipeNode parent)
-        {
-            Parent = parent;
-        }
-        
-        public void SetOwn(bool isOwn, bool isOwnDirect = false)
-        {
-            IsOwn = isOwn;
-            IsOwnDirect = isOwnDirect;
-        }
-
-        public void SetNeededCount(int count)
-        {
-            NeededCount = count;
-        }
-
-        public void Clear()
-        {
-            Id = 0;
-            IsMaterial = false;
-            IsBaseMaterial = false;
-            ChildCount = 0;
-            Parent = null;
-            NeededCount = 0;
-            Children?.Clear();
-            IsOwn = false;
-            IsOwnDirect = false;
-        }
-    }
-    
     
 }
