@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.Text;
 using UnityEngine;
 
 namespace Game
@@ -20,7 +21,34 @@ namespace Game
         {
             var root = RecipeBook.BuildRecipeTree(ItemId,1,ownedItems);
             var treeStr = RecipeBook.PrintTree(root);
+            var needed = RecipeBook.CollectNeededItems(root);
             Debug.Log(treeStr);
+            Debug.Log(FormatNeeded(needed));
+        }
+
+        private static string FormatNeeded(Dictionary<int, int> needed)
+        {
+            if (needed == null || needed.Count == 0)
+            {
+                return "Needed: (none)";
+            }
+
+            var sb = new StringBuilder();
+            sb.Append("Needed: ");
+
+            bool first = true;
+            foreach (KeyValuePair<int, int> pair in needed)
+            {
+                if (!first)
+                {
+                    sb.Append(", ");
+                }
+
+                sb.Append(pair.Key).Append('x').Append(pair.Value);
+                first = false;
+            }
+
+            return sb.ToString();
         }
     }
 }

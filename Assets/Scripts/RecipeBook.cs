@@ -81,6 +81,20 @@ namespace Game
             return sb.ToString();
         }
 
+        public static Dictionary<int, int> CollectNeededItems(RecipeNode root)
+        {
+            var needed = new Dictionary<int, int>();
+            if (root == null)
+            {
+                return needed;
+            }
+
+            var ownedInSubtree = new Dictionary<RecipeNode, bool>();
+            BuildOwnedSubtreeMap(root, ownedInSubtree);
+            CollectNeededRecursive(root, ownedInSubtree, needed);
+            return needed;
+        }
+
         private static void PrintNode(RecipeNode node, string prefix, bool isLast, bool isRoot, StringBuilder sb)
         {
             if (!isRoot)
@@ -177,6 +191,58 @@ namespace Game
             {
                 MarkOwnedRecursive(node.Children[i], remaining, ownFromInventory);
             }
+        }
+
+        private static bool BuildOwnedSubtreeMap(RecipeNode node, Dictionary<RecipeNode, bool> map)
+        {
+            bool hasOwned = node.IsOwn;
+
+            if (node.Children != null)
+            {
+                for (int i = 0; i < node.Children.Count; i++)
+                {
+                    hasOwned = BuildOwnedSubtreeMap(node.Children[i], map) || hasOwned;
+                }
+            }
+
+            map[node] = hasOwned;
+            return hasOwned;
+        }
+
+        private static void CollectNeededRecursive(
+            RecipeNode node,
+            Dictionary<RecipeNode, bool> ownedInSubtree,
+            Dictionary<int, int> needed)
+        {
+            if (node.IsOwn)
+            {
+                return;
+            }
+
+            bool hasOwned = ownedInSubtree[node];
+            if (!hasOwned)
+            {
+                AddNeeded(needed, node.Id, node.NeededCount);
+                return;
+            }
+
+            if (node.Children == null)
+            {
+                AddNeeded(needed, node.Id, node.NeededCount);
+                return;
+            }
+
+            for (int i = 0; i < node.Children.Count; i++)
+            {
+                CollectNeededRecursive(node.Children[i], ownedInSubtree, needed);
+            }
+        }
+
+        private static void AddNeeded(Dictionary<int, int> needed, int itemId, int count)
+        {
+            int current;
+            needed.TryGetValue(itemId, out current);
+            needed[itemId] = current + count;
         }
 
         private static Dictionary<int, RecipeDefinition> CreateRecipes()
