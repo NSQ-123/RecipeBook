@@ -8,6 +8,7 @@ namespace Game
     public static class RecipeBookCompact
     {
         private static readonly Stack<CompactNode> s_nodePool = new Stack<CompactNode>(256);
+        private static readonly Dictionary<CompactNode, Dictionary<int, int>> s_ownedSnapshotByRoot = new Dictionary<CompactNode, Dictionary<int, int>>();
 
         public sealed class CompactNode
         {
@@ -49,6 +50,8 @@ namespace Game
                 return;
             }
 
+            s_ownedSnapshotByRoot.Remove(root);
+
             ReturnNodeRecursive(root);
         }
 
@@ -57,6 +60,11 @@ namespace Game
             var remaining = owned == null
                 ? new Dictionary<int, int>()
                 : new Dictionary<int, int>(owned);
+
+            if (root != null)
+            {
+                s_ownedSnapshotByRoot[root] = new Dictionary<int, int>(remaining);
+            }
 
             MarkOwnedRecursive(root, remaining, 0);
         }
@@ -67,6 +75,15 @@ namespace Game
             if (root == null)
             {
                 return needed;
+            }
+
+            // Non-base boundary rule depends on branch shape; compact aggregation can lose it.
+            // Use legacy calculation when owned snapshot exists to keep output consistent.
+            Dictionary<int, int> ownedSnapshot;
+            if (s_ownedSnapshotByRoot.TryGetValue(root, out ownedSnapshot))
+            {
+                RecipeNode legacyRoot = RecipeBook.BuildRecipeTree(root.Id, root.NeededCount, ownedSnapshot);
+                return RecipeBook.CollectNeededItems(legacyRoot);
             }
 
             var hasOwnedSubtree = new Dictionary<CompactNode, bool>();
@@ -321,7 +338,15 @@ namespace Game
 
             for (int i = 0; i < node.Children.Count; i++)
             {
-                MarkOwnedRecursive(node.Children[i], remaining, fullOwned);
+                CompactNode child = node.Children[i];
+
+                // Child need is scaled from parent need when building compact tree.
+                // Inherited ownership must use the same ratio to stay equivalent to expanded-tree behavior.
+                int inheritedForChild = node.NeededCount > 0
+                    ? fullOwned * child.NeededCount / node.NeededCount
+                    : 0;
+
+                MarkOwnedRecursive(child, remaining, inheritedForChild);
             }
         }
 

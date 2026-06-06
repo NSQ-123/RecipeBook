@@ -23,7 +23,7 @@ namespace Game
                 { 2002, 1 }
             };
 
-            var root = RecipeBookCompact.BuildTree(ItemId, 1);
+            var root = RecipeBookCompact.BuildTree(ItemId);
             RecipeBookCompact.MarkOwned(root, owned);
 
             var needed = RecipeBookCompact.CollectNeeded(root);
@@ -33,7 +33,7 @@ namespace Game
             Debug.Log(FormatNeeded("Compact Needed", needed));
             Debug.Log(FormatNeeded("Compact Base Needed", baseNeeded));
 
-            RunCompactRegression();
+            //RunCompactRegression();
         }
 
         [ContextMenu("Run Compact Regression")]
@@ -48,7 +48,7 @@ namespace Game
                 { 1003, 1 }
             };
 
-            var compactRootA = RecipeBookCompact.BuildTree(1005, 1);
+            var compactRootA = RecipeBookCompact.BuildTree(1005);
             RecipeBookCompact.MarkOwned(compactRootA, ownedA);
 
             Dictionary<int, int> compactNeededA = RecipeBookCompact.CollectNeeded(compactRootA);
@@ -77,7 +77,7 @@ namespace Game
             Dictionary<int, int> legacyNeeded = RecipeBook.CollectNeededItems(legacyRoot);
             Dictionary<int, int> legacyBase = RecipeBook.CollectNeededBaseMaterials(legacyRoot);
 
-            var compactRootB = RecipeBookCompact.BuildTree(3004, 1);
+            var compactRootB = RecipeBookCompact.BuildTree(3004);
             RecipeBookCompact.MarkOwned(compactRootB, ownedB);
             Dictionary<int, int> compactNeededB = RecipeBookCompact.CollectNeeded(compactRootB);
             Dictionary<int, int> compactBaseB = RecipeBookCompact.CollectNeededBase(compactRootB);
