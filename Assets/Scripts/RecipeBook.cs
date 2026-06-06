@@ -48,6 +48,27 @@ namespace Game
             return BuildNode(itemId, amount);
         }
 
+        public static RecipeNode BuildRecipeTree(int itemId, int amount, IDictionary<int, int> ownedItems)
+        {
+            RecipeNode root = BuildRecipeTree(itemId, amount);
+            MarkOwnedItems(root, ownedItems);
+            return root;
+        }
+
+        public static void MarkOwnedItems(RecipeNode root, IDictionary<int, int> ownedItems)
+        {
+            if (root == null)
+            {
+                return;
+            }
+
+            var remaining = ownedItems == null
+                ? new Dictionary<int, int>()
+                : new Dictionary<int, int>(ownedItems);
+
+            MarkOwnedRecursive(root, remaining, false);
+        }
+
         public static string PrintTree(RecipeNode root)
         {
             if (root == null)
@@ -71,6 +92,8 @@ namespace Game
             sb.Append(node.Id)
                 .Append(" x")
                 .Append(node.NeededCount)
+                .Append(node.IsOwnDirect ? " [own:self]" : "")
+                .Append(!node.IsOwnDirect && node.IsOwn ? " [own:parent]" : "")
                 .Append(node.IsBaseMaterial ? " [base]" : "")
                 .AppendLine();
 
@@ -115,6 +138,45 @@ namespace Game
             }
 
             return node;
+        }
+
+        private static void MarkOwnedRecursive(RecipeNode node, Dictionary<int, int> remaining, bool inheritedOwn)
+        {
+            if (inheritedOwn)
+            {
+                node.SetOwn(true);
+
+                if (node.Children == null)
+                {
+                    return;
+                }
+
+                for (int i = 0; i < node.Children.Count; i++)
+                {
+                    MarkOwnedRecursive(node.Children[i], remaining, true);
+                }
+
+                return;
+            }
+
+            int count;
+            bool ownFromInventory = remaining.TryGetValue(node.Id, out count) && count > 0;
+            node.SetOwn(ownFromInventory, ownFromInventory);
+
+            if (ownFromInventory)
+            {
+                remaining[node.Id] = count - 1;
+            }
+
+            if (node.Children == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < node.Children.Count; i++)
+            {
+                MarkOwnedRecursive(node.Children[i], remaining, ownFromInventory);
+            }
         }
 
         private static Dictionary<int, RecipeDefinition> CreateRecipes()
@@ -171,6 +233,7 @@ namespace Game
         public RecipeNode Parent{get; private set; }
         public List<RecipeNode> Children {get; private set; }
         public bool IsOwn{get; private set; }
+        public bool IsOwnDirect { get; private set; }
         public int NeededCount { get; private set; }
         public bool IsLeaf => Children == null || Children.Count == 0;
         
@@ -195,9 +258,10 @@ namespace Game
             Parent = parent;
         }
         
-        public void SetOwn(bool isOwn)
+        public void SetOwn(bool isOwn, bool isOwnDirect = false)
         {
             IsOwn = isOwn;
+            IsOwnDirect = isOwnDirect;
         }
 
         public void SetNeededCount(int count)
@@ -215,6 +279,7 @@ namespace Game
             NeededCount = 0;
             Children?.Clear();
             IsOwn = false;
+            IsOwnDirect = false;
         }
     }
     
