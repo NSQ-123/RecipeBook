@@ -92,9 +92,9 @@ namespace Game
     public static class RecipeBook
     {
         public delegate bool TryResolveRecipeDelegate(int itemId, out RecipeDefinition recipe);
+        public static TryResolveRecipeDelegate TryRecipeResolver;
 
         private static readonly Dictionary<int, RecipeDefinition> s_recipes = new  Dictionary<int, RecipeDefinition>();
-        public static TryResolveRecipeDelegate TryRecipeResolver;
 
         public static void RegisterRecipe(int itemId, RecipeDefinition recipe)
         {
