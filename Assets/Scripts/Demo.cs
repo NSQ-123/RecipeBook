@@ -17,29 +17,38 @@ namespace Game
             { 3002, 1 },
             { 2002, 1 },
         };
+
+        private void Awake()
+        {
+            
+        }
         
 
         [ContextMenu("Run")]
         public void Run()
         {
+            //RecipeBook.ClearRecipes();
+            RecipeBook.RecipeResolver = RecipeBookTestProvider.Resolve;
+            
+            
             var root = RecipeBook.BuildRecipeTree(ItemId,1,ownedItems);
             var treeStr = RecipeBook.PrintTree(root);
             var needed = RecipeBook.CollectNeededItems(root);
             var baseNeeded = RecipeBook.CollectNeededBaseMaterials(root);
             Debug.Log(treeStr);
-            Debug.Log(FormatNeeded(needed));
-            Debug.Log(FormatNeeded(baseNeeded));
+            Debug.Log(FormatNeeded("Needed", needed));
+            Debug.Log(FormatNeeded("Base Needed", baseNeeded));
         }
 
-        private static string FormatNeeded(Dictionary<int, int> needed)
+        private static string FormatNeeded(string title, Dictionary<int, int> needed)
         {
             if (needed == null || needed.Count == 0)
             {
-                return "Needed: (none)";
+                return title + ": (none)";
             }
 
             var sb = new StringBuilder();
-            sb.Append("Needed: ");
+            sb.Append(title).Append(": ");
 
             bool first = true;
             foreach (KeyValuePair<int, int> pair in needed)

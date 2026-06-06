@@ -92,6 +92,22 @@ namespace Game
     public static class RecipeBook
     {
         private static readonly Dictionary<int, RecipeDefinition> s_recipes = new  Dictionary<int, RecipeDefinition>();
+        public static System.Func<int, RecipeDefinition> RecipeResolver;
+
+        public static void RegisterRecipe(int itemId, RecipeDefinition recipe)
+        {
+            if (recipe == null)
+            {
+                throw new System.ArgumentNullException(nameof(recipe));
+            }
+
+            s_recipes[itemId] = recipe;
+        }
+
+        public static void ClearRecipes()
+        {
+            s_recipes.Clear();
+        }
 
         public static RecipeNode BuildRecipeTree(int itemId, int amount = 1)
         {
@@ -195,18 +211,18 @@ namespace Game
         private static RecipeNode BuildNode(int itemId, int amount)
         {
             RecipeDefinition def;
-            bool hasRecipe = s_recipes.TryGetValue(itemId, out def);
-            if (!hasRecipe)
+            if (!TryGetRecipeDefinition(itemId, out def))
             {
-                throw new KeyNotFoundException($"No recipe found for itemId {itemId}");
+                throw new KeyNotFoundException($"No recipe found for itemId {itemId}. Please assign RecipeBook.RecipeResolver or register the recipe externally.");
             }
-            bool isBaseMaterial = !hasRecipe || def.IsBaseMaterial || def.Inputs.Count == 0;
-            bool isMaterial = hasRecipe && def.IsMaterial;
+
+            bool isBaseMaterial = def.IsBaseMaterial || def.Inputs.Count == 0;
+            bool isMaterial = def.IsMaterial;
 
             var node = new RecipeNode(itemId, isMaterial, isBaseMaterial);
             node.SetNeededCount(amount);
 
-            if (!hasRecipe || def.Inputs.Count == 0)
+            if (def.Inputs.Count == 0)
             {
                 return node;
             }
@@ -224,6 +240,28 @@ namespace Game
             }
 
             return node;
+        }
+
+        private static bool TryGetRecipeDefinition(int itemId, out RecipeDefinition recipe)
+        {
+            if (s_recipes.TryGetValue(itemId, out recipe))
+            {
+                return true;
+            }
+
+            if (RecipeResolver == null)
+            {
+                return false;
+            }
+
+            recipe = RecipeResolver(itemId);
+            if (recipe == null)
+            {
+                return false;
+            }
+
+            s_recipes[itemId] = recipe;
+            return true;
         }
 
         private static void MarkOwnedRecursive(RecipeNode node, Dictionary<int, int> remaining, bool inheritedOwn)
@@ -341,55 +379,6 @@ namespace Game
             }
         }
 
-
-        #region 创建测试配方
-        
-        private static Dictionary<int, RecipeDefinition> CreateTestRecipes()
-        {
-            
-            void AddMergeChain(Dictionary<int, RecipeDefinition> map, int startId, int endId, bool isMaterial)
-            {
-                map[startId] = new RecipeDefinition(isMaterial, true);
-
-                for (int itemId = startId + 1; itemId <= endId; itemId++)
-                {
-                    map[itemId] = new RecipeDefinition(isMaterial, false, new Ingredient(itemId - 1, 2));
-                }
-            }
-            
-            var map = new Dictionary<int, RecipeDefinition>();
-
-            AddMergeChain(map, 1001, 1010, true);
-            AddMergeChain(map, 2001, 2005, true);
-
-            // 转化物
-            map[3001] = new RecipeDefinition(false, false, new Ingredient(2003, 1));
-            map[3002] = new RecipeDefinition(false, false, new Ingredient(3001, 2));
-            map[3003] = new RecipeDefinition(false, false, new Ingredient(3002, 2));
-            map[3004] = new RecipeDefinition(false, false, new Ingredient(3003, 2));
-
-            // 器械
-            map[900002] = new RecipeDefinition(false, false, new Ingredient(900001, 2));
-
-            // 加工
-            map[50001] = new RecipeDefinition(false, false,
-                new Ingredient(1005, 1),
-                new Ingredient(2005, 1),
-                new Ingredient(900001, 1));
-
-            map[60001] = new RecipeDefinition(false, false,
-                new Ingredient(1005, 1),
-                new Ingredient(3004, 1));
-
-            map[70001] = new RecipeDefinition(false, false,
-                new Ingredient(60001, 1),
-                new Ingredient(900002, 1));
-
-            return map;
-        }
-        
-        #endregion
-        
     }
     
 }
