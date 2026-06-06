@@ -12,7 +12,10 @@ namespace Game
         {
             { 1001, 1 },
             { 1002, 1 },
-            { 1003, 1 }
+            { 1003, 1 },
+            { 3003, 1 },
+            { 3002, 1 },
+            { 2002, 1 },
         };
         
 
@@ -22,8 +25,10 @@ namespace Game
             var root = RecipeBook.BuildRecipeTree(ItemId,1,ownedItems);
             var treeStr = RecipeBook.PrintTree(root);
             var needed = RecipeBook.CollectNeededItems(root);
+            var baseNeeded = RecipeBook.CollectNeededBaseMaterials(root);
             Debug.Log(treeStr);
             Debug.Log(FormatNeeded(needed));
+            Debug.Log(FormatNeeded(baseNeeded));
         }
 
         private static string FormatNeeded(Dictionary<int, int> needed)

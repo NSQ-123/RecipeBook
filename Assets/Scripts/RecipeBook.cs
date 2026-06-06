@@ -95,6 +95,18 @@ namespace Game
             return needed;
         }
 
+        public static Dictionary<int, int> CollectNeededBaseMaterials(RecipeNode root)
+        {
+            var needed = new Dictionary<int, int>();
+            if (root == null)
+            {
+                return needed;
+            }
+
+            CollectNeededBaseRecursive(root, needed);
+            return needed;
+        }
+
         private static void PrintNode(RecipeNode node, string prefix, bool isLast, bool isRoot, StringBuilder sb)
         {
             if (!isRoot)
@@ -243,6 +255,30 @@ namespace Game
             int current;
             needed.TryGetValue(itemId, out current);
             needed[itemId] = current + count;
+        }
+
+        private static void CollectNeededBaseRecursive(RecipeNode node, Dictionary<int, int> needed)
+        {
+            if (node.IsOwn)
+            {
+                return;
+            }
+
+            if (node.IsBaseMaterial)
+            {
+                AddNeeded(needed, node.Id, node.NeededCount);
+                return;
+            }
+
+            if (node.Children == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < node.Children.Count; i++)
+            {
+                CollectNeededBaseRecursive(node.Children[i], needed);
+            }
         }
 
         private static Dictionary<int, RecipeDefinition> CreateRecipes()
