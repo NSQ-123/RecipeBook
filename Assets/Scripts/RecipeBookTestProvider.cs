@@ -6,11 +6,10 @@ namespace Game
     {
         private static readonly Dictionary<int, RecipeDefinition> s_testRecipes = CreateRecipes();
 
-        public static RecipeDefinition Resolve(int itemId)
+
+        public static bool TryResolve(int itemId, out RecipeDefinition recipe)
         {
-            RecipeDefinition recipe;
-            s_testRecipes.TryGetValue(itemId, out recipe);
-            return recipe;
+            return s_testRecipes.TryGetValue(itemId, out recipe);
         }
 
         private static Dictionary<int, RecipeDefinition> CreateRecipes()

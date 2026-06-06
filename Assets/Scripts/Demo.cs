@@ -20,17 +20,15 @@ namespace Game
 
         private void Awake()
         {
-            
+            RecipeBook.ClearRecipes();
+            RecipeBook.TryRecipeResolver = RecipeBookTestProvider.TryResolve;
         }
         
 
         [ContextMenu("Run")]
         public void Run()
         {
-            //RecipeBook.ClearRecipes();
-            RecipeBook.RecipeResolver = RecipeBookTestProvider.Resolve;
-            
-            
+            RecipeBook.TryRecipeResolver = RecipeBookTestProvider.TryResolve;
             var root = RecipeBook.BuildRecipeTree(ItemId,1,ownedItems);
             var treeStr = RecipeBook.PrintTree(root);
             var needed = RecipeBook.CollectNeededItems(root);

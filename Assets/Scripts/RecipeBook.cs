@@ -91,8 +91,10 @@ namespace Game
     
     public static class RecipeBook
     {
+        public delegate bool TryResolveRecipeDelegate(int itemId, out RecipeDefinition recipe);
+
         private static readonly Dictionary<int, RecipeDefinition> s_recipes = new  Dictionary<int, RecipeDefinition>();
-        public static System.Func<int, RecipeDefinition> RecipeResolver;
+        public static TryResolveRecipeDelegate TryRecipeResolver;
 
         public static void RegisterRecipe(int itemId, RecipeDefinition recipe)
         {
@@ -213,7 +215,7 @@ namespace Game
             RecipeDefinition def;
             if (!TryGetRecipeDefinition(itemId, out def))
             {
-                throw new KeyNotFoundException($"No recipe found for itemId {itemId}. Please assign RecipeBook.RecipeResolver or register the recipe externally.");
+                throw new KeyNotFoundException($"No recipe found for itemId {itemId}. Please assign RecipeBook.TryRecipeResolver or register the recipe externally.");
             }
 
             bool isBaseMaterial = def.IsBaseMaterial || def.Inputs.Count == 0;
@@ -249,14 +251,14 @@ namespace Game
                 return true;
             }
 
-            if (RecipeResolver == null)
+            if (TryRecipeResolver == null)
             {
                 return false;
             }
 
-            recipe = RecipeResolver(itemId);
-            if (recipe == null)
+            if (!TryRecipeResolver(itemId, out recipe) || recipe == null)
             {
+                recipe = null;
                 return false;
             }
 
