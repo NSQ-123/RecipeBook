@@ -3,7 +3,9 @@ using System.Text;
 
 namespace Game
 {
-    
+    /// <summary>
+    /// Ingredient requirement entry in a recipe definition.
+    /// </summary>
     public struct Ingredient
     {
         public readonly int ItemId;
@@ -16,6 +18,9 @@ namespace Game
         }
     }
 
+    /// <summary>
+    /// Static recipe data for one output item.
+    /// </summary>
     public class RecipeDefinition
     {
         public readonly bool IsMaterial;
@@ -30,6 +35,9 @@ namespace Game
         }
     }
     
+    /// <summary>
+    /// Runtime recipe tree node used for ownership marking and need calculation.
+    /// </summary>
     public class RecipeNode
     {
         public int Id {get; private set; }
@@ -52,10 +60,25 @@ namespace Game
         
         public void AddChild(RecipeNode child)
         {
+            // Keep parent/child references in sync for tree traversal.
             Children ??= new List<RecipeNode>();
             child.SetParent(this);
             Children.Add(child);
             ChildCount = Children.Count;
+        }
+
+        public void PrepareChildrenCapacity(int capacity)
+        {
+            if (capacity <= 0)
+            {
+                return;
+            }
+
+            Children ??= new List<RecipeNode>(capacity);
+            if (Children.Capacity < capacity)
+            {
+                Children.Capacity = capacity;
+            }
         }
         
         public void SetParent(RecipeNode parent)
@@ -89,13 +112,30 @@ namespace Game
     }
     
     
+    /// <summary>
+    /// Main entry for building recipe trees, marking ownership, and collecting missing items.
+    /// </summary>
     public static class RecipeBook
     {
+        /// <summary>
+        /// External recipe provider callback; returns true when recipe exists.
+        /// </summary>
         public delegate bool TryResolveRecipeDelegate(int itemId, out RecipeDefinition recipe);
         public static TryResolveRecipeDelegate TryRecipeResolver;
 
+        // Local cache for already-resolved recipes.
         private static readonly Dictionary<int, RecipeDefinition> s_recipes = new  Dictionary<int, RecipeDefinition>();
 
+        // Per-build state: subtree templates and current recursion path.
+        private sealed class BuildContext
+        {
+            public readonly Dictionary<int, RecipeNode> TemplateCache = new Dictionary<int, RecipeNode>();
+            public readonly HashSet<int> Path = new HashSet<int>();
+        }
+
+        /// <summary>
+        /// Manually register/update a recipe into local cache.
+        /// </summary>
         public static void RegisterRecipe(int itemId, RecipeDefinition recipe)
         {
             if (recipe == null)
@@ -106,11 +146,17 @@ namespace Game
             s_recipes[itemId] = recipe;
         }
 
+        /// <summary>
+        /// Clear local recipe cache.
+        /// </summary>
         public static void ClearRecipes()
         {
             s_recipes.Clear();
         }
 
+        /// <summary>
+        /// Build a recipe tree for target item and quantity.
+        /// </summary>
         public static RecipeNode BuildRecipeTree(int itemId, int amount = 1)
         {
             if (amount <= 0)
@@ -118,9 +164,13 @@ namespace Game
                 amount = 1;
             }
 
-            return BuildNode(itemId, amount);
+            var context = new BuildContext();
+            return BuildNode(itemId, amount, context);
         }
 
+        /// <summary>
+        /// Mark owned nodes in tree using the given inventory map.
+        /// </summary>
         public static void MarkOwnedItems(RecipeNode root, IDictionary<int, int> ownedItems)
         {
             if (root == null)
@@ -135,6 +185,9 @@ namespace Game
             MarkOwnedRecursive(root, remaining, false);
         }
 
+        /// <summary>
+        /// Build and mark in one call.
+        /// </summary>
         public static RecipeNode BuildRecipeTree(int itemId, int amount, IDictionary<int, int> ownedItems)
         {
             RecipeNode root = BuildRecipeTree(itemId, amount);
@@ -143,6 +196,9 @@ namespace Game
         }
         
         
+        /// <summary>
+        /// Print tree with ownership/base tags.
+        /// </summary>
         public static string PrintTree(RecipeNode root)
         {
             if (root == null)
@@ -155,6 +211,9 @@ namespace Game
             return sb.ToString();
         }
 
+        /// <summary>
+        /// Collect missing items using the current recipe rule.
+        /// </summary>
         public static Dictionary<int, int> CollectNeededItems(RecipeNode root)
         {
             var needed = new Dictionary<int, int>();
@@ -169,6 +228,9 @@ namespace Game
             return needed;
         }
 
+        /// <summary>
+        /// Collect missing items but only base materials.
+        /// </summary>
         public static Dictionary<int, int> CollectNeededBaseMaterials(RecipeNode root)
         {
             var needed = new Dictionary<int, int>();
@@ -210,8 +272,24 @@ namespace Game
             }
         }
 
-        private static RecipeNode BuildNode(int itemId, int amount)
+        private static RecipeNode BuildNode(int itemId, int amount, BuildContext context)
         {
+            // Guard against bad config: recipe cycles are not allowed.
+            if (context.Path.Contains(itemId))
+            {
+                throw new System.InvalidOperationException($"Recipe cycle detected at itemId {itemId}.");
+            }
+
+            if (amount == 1)
+            {
+                // Reuse prebuilt template for common single-amount subtrees.
+                RecipeNode template;
+                if (context.TemplateCache.TryGetValue(itemId, out template))
+                {
+                    return CloneNode(template);
+                }
+            }
+
             RecipeDefinition def;
             if (!TryGetRecipeDefinition(itemId, out def))
             {
@@ -226,22 +304,65 @@ namespace Game
 
             if (def.Inputs.Count == 0)
             {
+                if (amount == 1)
+                {
+                    // Cache leaf template for future clones.
+                    context.TemplateCache[itemId] = CloneNode(node);
+                }
+
                 return node;
             }
+
+            int childCount = 0;
+            for (int i = 0; i < def.Inputs.Count; i++)
+            {
+                childCount += def.Inputs[i].Count * amount;
+            }
+            // Reduce list growth reallocations.
+            node.PrepareChildrenCapacity(childCount);
+
+            context.Path.Add(itemId);
 
             for (int i = 0; i < def.Inputs.Count; i++)
             {
                 Ingredient ingredient = def.Inputs[i];
                 int required = ingredient.Count * amount;
 
-                // 这里按“份数”展开，便于后续标记哪些分支已满足。
+                // Expand by unit count to preserve existing ownership-marking behavior.
                 for (int n = 0; n < required; n++)
                 {
-                    node.AddChild(BuildNode(ingredient.ItemId, 1));
+                    node.AddChild(BuildNode(ingredient.ItemId, 1, context));
                 }
             }
 
+            context.Path.Remove(itemId);
+
+            if (amount == 1)
+            {
+                // Cache non-leaf template as well.
+                context.TemplateCache[itemId] = CloneNode(node);
+            }
+
             return node;
+        }
+
+        private static RecipeNode CloneNode(RecipeNode source)
+        {
+            var clone = new RecipeNode(source.Id, source.IsMaterial, source.IsBaseMaterial);
+            clone.SetNeededCount(source.NeededCount);
+
+            if (source.Children == null || source.Children.Count == 0)
+            {
+                return clone;
+            }
+
+            clone.PrepareChildrenCapacity(source.Children.Count);
+            for (int i = 0; i < source.Children.Count; i++)
+            {
+                clone.AddChild(CloneNode(source.Children[i]));
+            }
+
+            return clone;
         }
 
         private static bool TryGetRecipeDefinition(int itemId, out RecipeDefinition recipe)
@@ -262,6 +383,7 @@ namespace Game
                 return false;
             }
 
+            // Cache resolved recipe to avoid repeated resolver calls.
             s_recipes[itemId] = recipe;
             return true;
         }
@@ -307,6 +429,7 @@ namespace Game
 
         private static bool BuildOwnedSubtreeMap(RecipeNode node, Dictionary<RecipeNode, bool> map)
         {
+            // Post-order style aggregation: any owned descendant marks subtree as owned.
             bool hasOwned = node.IsOwn;
 
             if (node.Children != null)
@@ -334,6 +457,7 @@ namespace Game
             bool hasOwned = ownedInSubtree[node];
             if (!hasOwned)
             {
+                // If nothing owned in subtree, current node itself is the requirement boundary.
                 AddNeeded(needed, node.Id, node.NeededCount);
                 return;
             }
