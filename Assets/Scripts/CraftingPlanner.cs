@@ -5,21 +5,59 @@ using UnityEngine;
 namespace Game
 {
     [Serializable]
+    public readonly struct Ingredient
+    {
+        public readonly int ItemId;
+        public readonly int Count;
+
+        public Ingredient(int itemId, int count)
+        {
+            ItemId = itemId;
+            Count = count;
+        }
+    }
+
+    [Serializable]
+    public readonly struct ItemMeta
+    {
+        public readonly int ItemId;
+        public readonly bool IsMaterial;
+        public readonly bool IsBaseMaterial;
+
+        public ItemMeta(int itemId, bool isMaterial, bool isBaseMaterial)
+        {
+            ItemId = itemId;
+            IsMaterial = isMaterial;
+            IsBaseMaterial = isBaseMaterial;
+        }
+    }
+
+    [Serializable]
     public sealed class Recipe
     {
         public int OutputId;
         public int OutputCount;
-        public Dictionary<int, int> Inputs;
+        public List<Ingredient> Inputs;
         public int ToolId;
         public bool ToolConsumed;
 
-        public Recipe(int outputId, int outputCount, Dictionary<int, int> inputs, int toolId = 0, bool toolConsumed = false)
+        public Recipe(int outputId, int outputCount, List<Ingredient> inputs, int toolId, bool toolConsumed)
         {
             OutputId = outputId;
             OutputCount = outputCount;
             Inputs = inputs;
             ToolId = toolId;
             ToolConsumed = toolConsumed;
+        }
+
+        public Recipe(int outputId, int outputCount, params Ingredient[] inputs)
+            : this(outputId, outputCount, new List<Ingredient>(inputs), 0, false)
+        {
+        }
+
+        public Recipe(int outputId, int outputCount, int toolId, bool toolConsumed, params Ingredient[] inputs)
+            : this(outputId, outputCount, new List<Ingredient>(inputs), toolId, toolConsumed)
+        {
         }
     }
 
@@ -50,17 +88,16 @@ namespace Game
         }
     }
 
+
     public sealed class CraftingPlanner
     {
         private readonly Dictionary<int, Recipe> _recipes;
-        private readonly HashSet<int> _materialItems;
-        private readonly HashSet<int> _baseMaterials;
+        private readonly Dictionary<int, ItemMeta> _itemMeta;
 
-        public CraftingPlanner(Dictionary<int, Recipe> recipes, HashSet<int> materialItems, HashSet<int> baseMaterials)
+        public CraftingPlanner(Dictionary<int, Recipe> recipes, Dictionary<int, ItemMeta> itemMeta)
         {
             _recipes = recipes;
-            _materialItems = materialItems;
-            _baseMaterials = baseMaterials;
+            _itemMeta = itemMeta;
         }
 
         public PlanResult Plan(int targetId, int targetCount, Dictionary<int, int> inventory)
@@ -68,11 +105,11 @@ namespace Game
             var inv = new Dictionary<int, int>(inventory);
             var missingMaterials = new Dictionary<int, int>();
 
-            ResolveNeed(targetId, targetCount, inv, missingMaterials, new HashSet<int>(), _materialItems);
+            ResolveNeed(targetId, targetCount, inv, missingMaterials, new HashSet<int>(), false);
 
             var missingBase = new Dictionary<int, int>();
             var invForBase = new Dictionary<int, int>(inventory);
-            ResolveNeed(targetId, targetCount, invForBase, missingBase, new HashSet<int>(), _baseMaterials);
+            ResolveNeed(targetId, targetCount, invForBase, missingBase, new HashSet<int>(), true);
 
             var result = new PlanResult();
             CopyTo(result.MissingMaterials, missingMaterials);
@@ -86,7 +123,7 @@ namespace Game
             Dictionary<int, int> inventory,
             Dictionary<int, int> missingMaterials,
             HashSet<int> trace,
-            HashSet<int> directAddableItems)
+            bool baseOnly)
         {
             if (needCount <= 0)
             {
@@ -100,8 +137,8 @@ namespace Game
                 return;
             }
 
-            // Only material items can be directly added by the player.
-            if (directAddableItems.Contains(itemId))
+            // Table-driven item metadata decides whether player can directly add this item.
+            if (CanDirectAdd(itemId, baseOnly))
             {
                 Add(missingMaterials, itemId, remaining);
                 return;
@@ -126,18 +163,18 @@ namespace Game
                 if (haveTool <= 0)
                 {
                     // Non-consumable tool missing: resolve one required tool.
-                    ResolveNeed(recipe.ToolId, 1, inventory, missingMaterials, trace, directAddableItems);
+                    ResolveNeed(recipe.ToolId, 1, inventory, missingMaterials, trace, baseOnly);
                 }
             }
 
             foreach (var input in recipe.Inputs)
             {
-                ResolveNeed(input.Key, input.Value * times, inventory, missingMaterials, trace, directAddableItems);
+                ResolveNeed(input.ItemId, input.Count * times, inventory, missingMaterials, trace, baseOnly);
             }
 
             if (recipe.ToolId != 0 && recipe.ToolConsumed)
             {
-                ResolveNeed(recipe.ToolId, times, inventory, missingMaterials, trace, directAddableItems);
+                ResolveNeed(recipe.ToolId, times, inventory, missingMaterials, trace, baseOnly);
             }
 
             int produced = times * recipe.OutputCount;
@@ -182,6 +219,16 @@ namespace Game
             return (a + b - 1) / b;
         }
 
+        private bool CanDirectAdd(int itemId, bool baseOnly)
+        {
+            if (!_itemMeta.TryGetValue(itemId, out var meta))
+            {
+                return false;
+            }
+
+            return baseOnly ? meta.IsBaseMaterial : meta.IsMaterial;
+        }
+
         private static void CopyTo(Dictionary<int, int> target, Dictionary<int, int> source)
         {
             foreach (var kv in source)
@@ -195,43 +242,63 @@ namespace Game
             var recipes = new Dictionary<int, Recipe>();
 
             // 100x chain
-            recipes[1002] = new Recipe(1002, 1, new Dictionary<int, int> { { 1001, 2 } });
-            recipes[1003] = new Recipe(1003, 1, new Dictionary<int, int> { { 1002, 2 } });
-            recipes[1004] = new Recipe(1004, 1, new Dictionary<int, int> { { 1003, 2 } });
-            recipes[1005] = new Recipe(1005, 1, new Dictionary<int, int> { { 1004, 2 } });
-            recipes[1006] = new Recipe(1006, 1, new Dictionary<int, int> { { 1005, 2 } });
-            recipes[1007] = new Recipe(1007, 1, new Dictionary<int, int> { { 1006, 2 } });
-            recipes[1008] = new Recipe(1008, 1, new Dictionary<int, int> { { 1007, 2 } });
-            recipes[1009] = new Recipe(1009, 1, new Dictionary<int, int> { { 1008, 2 } });
-            recipes[1010] = new Recipe(1010, 1, new Dictionary<int, int> { { 1009, 2 } });
+            recipes[1002] = new Recipe(1002, 1, new Ingredient(1001, 2));
+            recipes[1003] = new Recipe(1003, 1, new Ingredient(1002, 2));
+            recipes[1004] = new Recipe(1004, 1, new Ingredient(1003, 2));
+            recipes[1005] = new Recipe(1005, 1, new Ingredient(1004, 2));
+            recipes[1006] = new Recipe(1006, 1, new Ingredient(1005, 2));
+            recipes[1007] = new Recipe(1007, 1, new Ingredient(1006, 2));
+            recipes[1008] = new Recipe(1008, 1, new Ingredient(1007, 2));
+            recipes[1009] = new Recipe(1009, 1, new Ingredient(1008, 2));
+            recipes[1010] = new Recipe(1010, 1, new Ingredient(1009, 2));
 
             // 200x chain
-            recipes[2002] = new Recipe(2002, 1, new Dictionary<int, int> { { 2001, 2 } });
-            recipes[2003] = new Recipe(2003, 1, new Dictionary<int, int> { { 2002, 2 } });
-            recipes[2004] = new Recipe(2004, 1, new Dictionary<int, int> { { 2003, 2 } });
-            recipes[2005] = new Recipe(2005, 1, new Dictionary<int, int> { { 2004, 2 } });
+            recipes[2002] = new Recipe(2002, 1, new Ingredient(2001, 2));
+            recipes[2003] = new Recipe(2003, 1, new Ingredient(2002, 2));
+            recipes[2004] = new Recipe(2004, 1, new Ingredient(2003, 2));
+            recipes[2005] = new Recipe(2005, 1, new Ingredient(2004, 2));
 
             // Convert chain
-            recipes[3001] = new Recipe(3001, 1, new Dictionary<int, int> { { 2003, 1 } });
-            recipes[3002] = new Recipe(3002, 1, new Dictionary<int, int> { { 3001, 2 } });
-            recipes[3003] = new Recipe(3003, 1, new Dictionary<int, int> { { 3002, 2 } });
-            recipes[3004] = new Recipe(3004, 1, new Dictionary<int, int> { { 3003, 2 } });
+            recipes[3001] = new Recipe(3001, 1, new Ingredient(2003, 1));
+            recipes[3002] = new Recipe(3002, 1, new Ingredient(3001, 2));
+            recipes[3003] = new Recipe(3003, 1, new Ingredient(3002, 2));
+            recipes[3004] = new Recipe(3004, 1, new Ingredient(3003, 2));
 
             // Tools and processed items
-            recipes[900002] = new Recipe(900002, 1, new Dictionary<int, int> { { 900001, 2 } });
-            recipes[50001] = new Recipe(50001, 1, new Dictionary<int, int> { { 1005, 1 }, { 2005, 1 } }, 900001, false);
-            recipes[60001] = new Recipe(60001, 1, new Dictionary<int, int> { { 1005, 1 }, { 3004, 1 } });
-            recipes[70001] = new Recipe(70001, 1, new Dictionary<int, int> { { 60001, 1 } }, 900002, false);
+            recipes[900002] = new Recipe(900002, 1, new Ingredient(900001, 2));
+            recipes[50001] = new Recipe(50001, 1, 900001, false, new Ingredient(1005, 1), new Ingredient(2005, 1));
+            recipes[60001] = new Recipe(60001, 1, new Ingredient(1005, 1), new Ingredient(3004, 1));
+            recipes[70001] = new Recipe(70001, 1, 900002, false, new Ingredient(60001, 1));
 
-            var materialItems = new HashSet<int>
+            var itemMeta = new Dictionary<int, ItemMeta>
             {
-                1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010,
-                2001, 2002, 2003, 2004, 2005
+                [1001] = new ItemMeta(1001, true, true),
+                [1002] = new ItemMeta(1002, true, false),
+                [1003] = new ItemMeta(1003, true, false),
+                [1004] = new ItemMeta(1004, true, false),
+                [1005] = new ItemMeta(1005, true, false),
+                [1006] = new ItemMeta(1006, true, false),
+                [1007] = new ItemMeta(1007, true, false),
+                [1008] = new ItemMeta(1008, true, false),
+                [1009] = new ItemMeta(1009, true, false),
+                [1010] = new ItemMeta(1010, true, false),
+                [2001] = new ItemMeta(2001, true, true),
+                [2002] = new ItemMeta(2002, true, false),
+                [2003] = new ItemMeta(2003, true, false),
+                [2004] = new ItemMeta(2004, true, false),
+                [2005] = new ItemMeta(2005, true, false),
+                [3001] = new ItemMeta(3001, false, false),
+                [3002] = new ItemMeta(3002, false, false),
+                [3003] = new ItemMeta(3003, false, false),
+                [3004] = new ItemMeta(3004, false, false),
+                [50001] = new ItemMeta(50001, false, false),
+                [60001] = new ItemMeta(60001, false, false),
+                [70001] = new ItemMeta(70001, false, false),
+                [900001] = new ItemMeta(900001, false, false),
+                [900002] = new ItemMeta(900002, false, false)
             };
 
-            var baseMaterials = new HashSet<int> { 1001, 2001 };
-
-            return new CraftingPlanner(recipes, materialItems, baseMaterials);
+            return new CraftingPlanner(recipes, itemMeta);
         }
     }
 
