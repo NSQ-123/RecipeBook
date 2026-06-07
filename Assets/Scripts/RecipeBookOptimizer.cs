@@ -26,14 +26,14 @@ namespace Game
         /// <summary>
         /// Convenience API that allocates internal temporary containers.
         /// </summary>
-        public static Dictionary<int, int> CollectNeededItems(RecipeNode root)
+        public static Dictionary<int, int> CollectNeededItems(RecipeNode root, bool ignoreProcessingTool = true)
         {
             var needed = new Dictionary<int, int>();
             var ownedSubtree = new Dictionary<RecipeNode, bool>();
             var postOrder = new List<RecipeNode>();
             var stack = new Stack<VisitState>();
 
-            CollectNeededItemsNonAlloc(root, needed, ownedSubtree, postOrder, stack);
+            CollectNeededItemsNonAlloc(root, needed, ownedSubtree, postOrder, stack, ignoreProcessingTool);
             return needed;
         }
 
@@ -43,7 +43,8 @@ namespace Game
             Dictionary<int, int> needed,
             Dictionary<RecipeNode, bool> ownedSubtree,
             List<RecipeNode> postOrder,
-            Stack<VisitState> stack)
+            Stack<VisitState> stack,
+            bool ignoreProcessingTool = true)
         {
             // Callers can reuse these containers between frames/runs.
             needed.Clear();
@@ -63,6 +64,12 @@ namespace Game
             for (int i = 0; i < postOrder.Count; i++)
             {
                 RecipeNode node = postOrder[i];
+                if (ignoreProcessingTool && node.IsProcessingTool)
+                {
+                    ownedSubtree[node] = false;
+                    continue;
+                }
+
                 bool hasOwned = node.IsOwn;
 
                 if (node.Children != null)
@@ -86,6 +93,11 @@ namespace Game
             {
                 VisitState state = stack.Pop();
                 RecipeNode node = state.Node;
+
+                if (ignoreProcessingTool && node.IsProcessingTool)
+                {
+                    continue;
+                }
 
                 if (node.IsOwn)
                 {
@@ -118,11 +130,11 @@ namespace Game
         /// <summary>
         /// Convenience API that allocates internal stack for base-material-only collection.
         /// </summary>
-        public static Dictionary<int, int> CollectNeededBaseMaterials(RecipeNode root)
+        public static Dictionary<int, int> CollectNeededBaseMaterials(RecipeNode root, bool ignoreProcessingTool = true)
         {
             var needed = new Dictionary<int, int>();
             var stack = new Stack<RecipeNode>();
-            CollectNeededBaseMaterialsNonAlloc(root, needed, stack);
+            CollectNeededBaseMaterialsNonAlloc(root, needed, stack, ignoreProcessingTool);
             return needed;
         }
 
@@ -132,7 +144,8 @@ namespace Game
         public static void CollectNeededBaseMaterialsNonAlloc(
             RecipeNode root,
             Dictionary<int, int> needed,
-            Stack<RecipeNode> stack)
+            Stack<RecipeNode> stack,
+            bool ignoreProcessingTool = true)
         {
             needed.Clear();
             stack.Clear();
@@ -146,6 +159,11 @@ namespace Game
             while (stack.Count > 0)
             {
                 RecipeNode node = stack.Pop();
+
+                if (ignoreProcessingTool && node.IsProcessingTool)
+                {
+                    continue;
+                }
 
                 if (node.IsOwn)
                 {

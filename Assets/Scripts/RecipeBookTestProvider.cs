@@ -24,7 +24,7 @@ namespace Game
             map[3003] = new RecipeDefinition(false, false, new Ingredient(3002, 2));
             map[3004] = new RecipeDefinition(false, false, new Ingredient(3003, 2));
 
-            map[900002] = new RecipeDefinition(false, false, new Ingredient(900001, 2));
+            map[900002] = new RecipeDefinition(false, false, true, new Ingredient(900001, 2));
 
             map[50001] = new RecipeDefinition(false, false,
                 new Ingredient(1005, 1),
@@ -38,7 +38,9 @@ namespace Game
             map[70001] = new RecipeDefinition(false, false,
                 new Ingredient(60001, 1),
                 new Ingredient(900002, 1));
-
+            
+            map[900001] = new RecipeDefinition(false, false, true);
+            
             return map;
         }
 

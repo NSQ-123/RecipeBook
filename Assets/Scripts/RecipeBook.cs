@@ -25,12 +25,19 @@ namespace Game
     {
         public readonly bool IsMaterial;
         public readonly bool IsBaseMaterial;
+        public readonly bool IsProcessingTool;
         public readonly List<Ingredient> Inputs;
 
         public RecipeDefinition(bool isMaterial, bool isBaseMaterial, params Ingredient[] inputs)
+            : this(isMaterial, isBaseMaterial, false, inputs)
+        {
+        }
+
+        public RecipeDefinition(bool isMaterial, bool isBaseMaterial, bool isProcessingTool, params Ingredient[] inputs)
         {
             IsMaterial = isMaterial;
             IsBaseMaterial = isBaseMaterial;
+            IsProcessingTool = isProcessingTool;
             Inputs = new List<Ingredient>(inputs);
         }
     }
@@ -43,6 +50,7 @@ namespace Game
         public int Id {get; private set; }
         public bool IsMaterial {get; private set; }
         public bool IsBaseMaterial  {get; private set; }
+        public bool IsProcessingTool {get; private set; }
         public int ChildCount {get; private set; }
         public RecipeNode Parent{get; private set; }
         public List<RecipeNode> Children {get; private set; }
@@ -50,11 +58,12 @@ namespace Game
         public bool IsOwnDirect { get; private set; }
         public int NeededCount { get; private set; }
         
-        public RecipeNode(int itemId, bool isMaterial, bool isBaseMaterial)
+        public RecipeNode(int itemId, bool isMaterial, bool isBaseMaterial, bool isProcessingTool = false)
         {
             Id = itemId;
             IsMaterial = isMaterial;
             IsBaseMaterial = isBaseMaterial;
+            IsProcessingTool = isProcessingTool;
             NeededCount = 1;
         }
         
@@ -102,6 +111,7 @@ namespace Game
             Id = 0;
             IsMaterial = false;
             IsBaseMaterial = false;
+            IsProcessingTool = false;
             ChildCount = 0;
             Parent = null;
             NeededCount = 0;
@@ -214,7 +224,7 @@ namespace Game
         /// <summary>
         /// Collect missing items using the current recipe rule.
         /// </summary>
-        public static Dictionary<int, int> CollectNeededItems(RecipeNode root)
+        public static Dictionary<int, int> CollectNeededItems(RecipeNode root, bool ignoreProcessingTool = true)
         {
             var needed = new Dictionary<int, int>();
             if (root == null)
@@ -224,14 +234,14 @@ namespace Game
 
             var ownedInSubtree = new Dictionary<RecipeNode, bool>();
             BuildOwnedSubtreeMap(root, ownedInSubtree);
-            CollectNeededRecursive(root, ownedInSubtree, needed);
+            CollectNeededRecursive(root, ownedInSubtree, needed, ignoreProcessingTool);
             return needed;
         }
 
         /// <summary>
         /// Collect missing items but only base materials.
         /// </summary>
-        public static Dictionary<int, int> CollectNeededBaseMaterials(RecipeNode root)
+        public static Dictionary<int, int> CollectNeededBaseMaterials(RecipeNode root, bool ignoreProcessingTool = true)
         {
             var needed = new Dictionary<int, int>();
             if (root == null)
@@ -239,7 +249,7 @@ namespace Game
                 return needed;
             }
 
-            CollectNeededBaseRecursive(root, needed);
+            CollectNeededBaseRecursive(root, needed, ignoreProcessingTool);
             return needed;
         }
 
@@ -298,8 +308,9 @@ namespace Game
 
             bool isBaseMaterial = def.IsBaseMaterial || def.Inputs.Count == 0;
             bool isMaterial = def.IsMaterial;
+            bool isProcessingTool = def.IsProcessingTool;
 
-            var node = new RecipeNode(itemId, isMaterial, isBaseMaterial);
+            var node = new RecipeNode(itemId, isMaterial, isBaseMaterial, isProcessingTool);
             node.SetNeededCount(amount);
 
             if (def.Inputs.Count == 0)
@@ -348,7 +359,7 @@ namespace Game
 
         private static RecipeNode CloneNode(RecipeNode source)
         {
-            var clone = new RecipeNode(source.Id, source.IsMaterial, source.IsBaseMaterial);
+            var clone = new RecipeNode(source.Id, source.IsMaterial, source.IsBaseMaterial, source.IsProcessingTool);
             clone.SetNeededCount(source.NeededCount);
 
             if (source.Children == null || source.Children.Count == 0)
@@ -447,8 +458,14 @@ namespace Game
         private static void CollectNeededRecursive(
             RecipeNode node,
             Dictionary<RecipeNode, bool> ownedInSubtree,
-            Dictionary<int, int> needed)
+            Dictionary<int, int> needed,
+            bool ignoreProcessingTool)
         {
+            if (ignoreProcessingTool && node.IsProcessingTool)
+            {
+                return;
+            }
+
             if (node.IsOwn)
             {
                 return;
@@ -470,7 +487,7 @@ namespace Game
 
             for (int i = 0; i < node.Children.Count; i++)
             {
-                CollectNeededRecursive(node.Children[i], ownedInSubtree, needed);
+                CollectNeededRecursive(node.Children[i], ownedInSubtree, needed, ignoreProcessingTool);
             }
         }
 
@@ -481,8 +498,13 @@ namespace Game
             needed[itemId] = current + count;
         }
 
-        private static void CollectNeededBaseRecursive(RecipeNode node, Dictionary<int, int> needed)
+        private static void CollectNeededBaseRecursive(RecipeNode node, Dictionary<int, int> needed, bool ignoreProcessingTool)
         {
+            if (ignoreProcessingTool && node.IsProcessingTool)
+            {
+                return;
+            }
+
             if (node.IsOwn)
             {
                 return;
@@ -501,7 +523,7 @@ namespace Game
 
             for (int i = 0; i < node.Children.Count; i++)
             {
-                CollectNeededBaseRecursive(node.Children[i], needed);
+                CollectNeededBaseRecursive(node.Children[i], needed, ignoreProcessingTool);
             }
         }
 

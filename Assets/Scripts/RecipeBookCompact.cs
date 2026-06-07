@@ -15,6 +15,7 @@ namespace Game
             public int Id;
             public bool IsMaterial;
             public bool IsBaseMaterial;
+            public bool IsProcessingTool;
             public int NeededCount;
             public int OwnedDirectCount;
             public int OwnedInheritedCount;
@@ -69,7 +70,7 @@ namespace Game
             MarkOwnedRecursive(root, remaining, 0);
         }
 
-        public static Dictionary<int, int> CollectNeeded(CompactNode root)
+        public static Dictionary<int, int> CollectNeeded(CompactNode root, bool ignoreProcessingTool = true)
         {
             var needed = new Dictionary<int, int>();
             if (root == null)
@@ -83,19 +84,19 @@ namespace Game
             if (s_ownedSnapshotByRoot.TryGetValue(root, out ownedSnapshot))
             {
                 RecipeNode legacyRoot = RecipeBook.BuildRecipeTree(root.Id, root.NeededCount, ownedSnapshot);
-                return RecipeBook.CollectNeededItems(legacyRoot);
+                return RecipeBook.CollectNeededItems(legacyRoot, ignoreProcessingTool);
             }
 
             var hasOwnedSubtree = new Dictionary<CompactNode, bool>();
             BuildHasOwnedMap(root, hasOwnedSubtree);
-            CollectNeededRecursive(root, hasOwnedSubtree, needed);
+            CollectNeededRecursive(root, hasOwnedSubtree, needed, ignoreProcessingTool);
             return needed;
         }
 
-        public static Dictionary<int, int> CollectNeededBase(CompactNode root)
+        public static Dictionary<int, int> CollectNeededBase(CompactNode root, bool ignoreProcessingTool = true)
         {
             var needed = new Dictionary<int, int>();
-            CollectNeededBaseRecursive(root, needed);
+            CollectNeededBaseRecursive(root, needed, ignoreProcessingTool);
             return needed;
         }
 
@@ -137,6 +138,7 @@ namespace Game
             node.Id = itemId;
             node.IsMaterial = recipe.IsMaterial;
             node.IsBaseMaterial = recipe.IsBaseMaterial || recipe.Inputs.Count == 0;
+            node.IsProcessingTool = recipe.IsProcessingTool;
             node.NeededCount = amount;
 
             if (recipe.Inputs.Count == 0)
@@ -194,6 +196,7 @@ namespace Game
             clone.Id = source.Id;
             clone.IsMaterial = source.IsMaterial;
             clone.IsBaseMaterial = source.IsBaseMaterial;
+            clone.IsProcessingTool = source.IsProcessingTool;
             clone.NeededCount = neededOverride;
 
             if (source.Children == null || source.Children.Count == 0)
@@ -219,6 +222,7 @@ namespace Game
                 Id = source.Id,
                 IsMaterial = source.IsMaterial,
                 IsBaseMaterial = source.IsBaseMaterial,
+                IsProcessingTool = source.IsProcessingTool,
                 NeededCount = neededOverride
             };
 
@@ -244,6 +248,7 @@ namespace Game
             node.Id = 0;
             node.IsMaterial = false;
             node.IsBaseMaterial = false;
+            node.IsProcessingTool = false;
             node.NeededCount = 0;
             node.OwnedDirectCount = 0;
             node.OwnedInheritedCount = 0;
@@ -366,9 +371,14 @@ namespace Game
             return hasOwned;
         }
 
-        private static void CollectNeededRecursive(CompactNode node, Dictionary<CompactNode, bool> hasOwnedSubtree, Dictionary<int, int> needed)
+        private static void CollectNeededRecursive(CompactNode node, Dictionary<CompactNode, bool> hasOwnedSubtree, Dictionary<int, int> needed, bool ignoreProcessingTool)
         {
             if (node == null)
+            {
+                return;
+            }
+
+            if (ignoreProcessingTool && node.IsProcessingTool)
             {
                 return;
             }
@@ -393,13 +403,18 @@ namespace Game
 
             for (int i = 0; i < node.Children.Count; i++)
             {
-                CollectNeededRecursive(node.Children[i], hasOwnedSubtree, needed);
+                CollectNeededRecursive(node.Children[i], hasOwnedSubtree, needed, ignoreProcessingTool);
             }
         }
 
-        private static void CollectNeededBaseRecursive(CompactNode node, Dictionary<int, int> needed)
+        private static void CollectNeededBaseRecursive(CompactNode node, Dictionary<int, int> needed, bool ignoreProcessingTool)
         {
             if (node == null)
+            {
+                return;
+            }
+
+            if (ignoreProcessingTool && node.IsProcessingTool)
             {
                 return;
             }
@@ -422,7 +437,7 @@ namespace Game
 
             for (int i = 0; i < node.Children.Count; i++)
             {
-                CollectNeededBaseRecursive(node.Children[i], needed);
+                CollectNeededBaseRecursive(node.Children[i], needed, ignoreProcessingTool);
             }
         }
 
