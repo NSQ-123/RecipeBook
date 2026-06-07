@@ -8,7 +8,14 @@ namespace Game
     public static class RecipeBookCompact
     {
         private static readonly Stack<CompactNode> s_nodePool = new Stack<CompactNode>(256);
-        private static readonly Dictionary<CompactNode, Dictionary<int, int>> s_ownedSnapshotByRoot = new Dictionary<CompactNode, Dictionary<int, int>>();
+        private static readonly Dictionary<int, RecipeDefinition> s_recipes = new Dictionary<int, RecipeDefinition>();
+
+        /// <summary>
+        /// External recipe provider callback used only by RecipeBookCompact.
+        /// </summary>
+        public delegate bool TryResolveRecipeDelegate(int itemId, out RecipeDefinition recipe);
+
+        public static TryResolveRecipeDelegate TryRecipeResolver;
 
         public sealed class CompactNode
         {
@@ -51,9 +58,28 @@ namespace Game
                 return;
             }
 
-            s_ownedSnapshotByRoot.Remove(root);
-
             ReturnNodeRecursive(root);
+        }
+
+        /// <summary>
+        /// Manually register/update a recipe into RecipeBookCompact local cache.
+        /// </summary>
+        public static void RegisterRecipe(int itemId, RecipeDefinition recipe)
+        {
+            if (recipe == null)
+            {
+                throw new System.ArgumentNullException(nameof(recipe));
+            }
+
+            s_recipes[itemId] = recipe;
+        }
+
+        /// <summary>
+        /// Clear RecipeBookCompact local recipe cache.
+        /// </summary>
+        public static void ClearRecipes()
+        {
+            s_recipes.Clear();
         }
 
         public static void MarkOwned(CompactNode root, IDictionary<int, int> owned)
@@ -61,11 +87,6 @@ namespace Game
             var remaining = owned == null
                 ? new Dictionary<int, int>()
                 : new Dictionary<int, int>(owned);
-
-            if (root != null)
-            {
-                s_ownedSnapshotByRoot[root] = new Dictionary<int, int>(remaining);
-            }
 
             MarkOwnedRecursive(root, remaining, 0);
         }
@@ -76,15 +97,6 @@ namespace Game
             if (root == null)
             {
                 return needed;
-            }
-
-            // Non-base boundary rule depends on branch shape; compact aggregation can lose it.
-            // Use legacy calculation when owned snapshot exists to keep output consistent.
-            Dictionary<int, int> ownedSnapshot;
-            if (s_ownedSnapshotByRoot.TryGetValue(root, out ownedSnapshot))
-            {
-                RecipeNode legacyRoot = RecipeBook.BuildRecipeTree(root.Id, root.NeededCount, ownedSnapshot);
-                return RecipeBook.CollectNeededItems(legacyRoot, ignoreProcessingTool);
             }
 
             var hasOwnedSubtree = new Dictionary<CompactNode, bool>();
@@ -175,19 +187,25 @@ namespace Game
 
         private static bool TryGetRecipe(int itemId, out RecipeDefinition recipe)
         {
-            if (RecipeBook.TryRecipeResolver == null)
+            if (s_recipes.TryGetValue(itemId, out recipe))
+            {
+                return true;
+            }
+
+            if (TryRecipeResolver == null)
             {
                 recipe = null;
                 return false;
             }
 
-            if (!RecipeBook.TryRecipeResolver(itemId, out recipe))
+            if (!TryRecipeResolver(itemId, out recipe) || recipe == null)
             {
                 recipe = null;
                 return false;
             }
 
-            return recipe != null;
+            s_recipes[itemId] = recipe;
+            return true;
         }
 
         private static CompactNode CloneFromTemplate(CompactNode source, int neededOverride)
@@ -371,7 +389,8 @@ namespace Game
             return hasOwned;
         }
 
-        private static void CollectNeededRecursive(CompactNode node, Dictionary<CompactNode, bool> hasOwnedSubtree, Dictionary<int, int> needed, bool ignoreProcessingTool)
+        private static void CollectNeededRecursive(CompactNode node, Dictionary<CompactNode, bool> hasOwnedSubtree,
+            Dictionary<int, int> needed, bool ignoreProcessingTool)
         {
             if (node == null)
             {
@@ -407,7 +426,8 @@ namespace Game
             }
         }
 
-        private static void CollectNeededBaseRecursive(CompactNode node, Dictionary<int, int> needed, bool ignoreProcessingTool)
+        private static void CollectNeededBaseRecursive(CompactNode node, Dictionary<int, int> needed,
+            bool ignoreProcessingTool)
         {
             if (node == null)
             {
@@ -483,4 +503,3 @@ namespace Game
         }
     }
 }
-

@@ -11,7 +11,7 @@ namespace Game
         [ContextMenu("Run Compact Demo")]
         public void RunCompactDemo()
         {
-            RecipeBook.TryRecipeResolver = RecipeBookTestProvider.TryResolve;
+            RecipeBookCompact.TryRecipeResolver = RecipeBookTestProvider.TryResolve;
 
             var owned = new Dictionary<int, int>
             {
@@ -39,6 +39,7 @@ namespace Game
         [ContextMenu("Run Compact Regression")]
         public void RunCompactRegression()
         {
+            RecipeBookCompact.TryRecipeResolver = RecipeBookTestProvider.TryResolve;
             RecipeBook.TryRecipeResolver = RecipeBookTestProvider.TryResolve;
 
             var ownedA = new Dictionary<int, int>
