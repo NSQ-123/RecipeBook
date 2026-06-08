@@ -106,35 +106,15 @@ namespace Game
 
                 bool hasOwnedInSubtree;
                 ownedSubtree.TryGetValue(node, out hasOwnedInSubtree);
-                if (!hasOwnedInSubtree)
+                NeedCollectAction action = RecipeNeedCollectionRule.Evaluate(node, hasOwnedInSubtree);
+                if (action == NeedCollectAction.AddCurrent)
                 {
-                    // Boundary collection only applies to material nodes.
-                    if (node.IsMaterial)
-                    {
-                        AddNeeded(needed, node.Id, node.NeededCount);
-                        continue;
-                    }
-
-                    // Non-material outputs are not needed themselves; continue to inputs.
-                    if (node.Children == null || node.Children.Count == 0)
-                    {
-                        continue;
-                    }
-
-                    for (int i = node.Children.Count - 1; i >= 0; i--)
-                    {
-                        stack.Push(new VisitState(node.Children[i], false));
-                    }
+                    AddNeeded(needed, node.Id, node.NeededCount);
                     continue;
                 }
 
-                if (node.Children == null || node.Children.Count == 0)
+                if (action == NeedCollectAction.Stop || node.Children == null || node.Children.Count == 0)
                 {
-                    // Leaf and still not owned -> only material leaves are needed.
-                    if (node.IsMaterial)
-                    {
-                        AddNeeded(needed, node.Id, node.NeededCount);
-                    }
                     continue;
                 }
 
@@ -188,14 +168,15 @@ namespace Game
                     continue;
                 }
 
-                if (node.IsBaseMaterial)
+                NeedCollectAction action = RecipeNeedCollectionRule.EvaluateBase(node);
+                if (action == NeedCollectAction.AddCurrent)
                 {
                     // Base material that is not owned contributes to final requirement.
                     AddNeeded(needed, node.Id, node.NeededCount);
                     continue;
                 }
 
-                if (node.Children == null)
+                if (action == NeedCollectAction.Stop || node.Children == null)
                 {
                     continue;
                 }

@@ -472,38 +472,16 @@ namespace Game
                 return;
             }
 
-            // True means current node or any descendant is already owned.
-            // We must keep drilling down to avoid over-counting missing requirements.
-            bool hasOwned = ownedInSubtree[node];
-            if (!hasOwned)
+            // Shared rule keeps RecipeBook and RecipeBookOptimizer behavior aligned.
+            NeedCollectAction action = RecipeNeedCollectionRule.Evaluate(node, ownedInSubtree[node]);
+            if (action == NeedCollectAction.AddCurrent)
             {
-                // Requirement boundary is only valid for material items.
-                if (node.IsMaterial)
-                {
-                    AddNeeded(needed, node.Id, node.NeededCount);
-                    return;
-                }
-
-                // Non-material outputs are not collectible requirements themselves.
-                // Continue to children and gather actual material requirements.
-                if (node.Children == null)
-                {
-                    return;
-                }
-
-                for (int i = 0; i < node.Children.Count; i++)
-                {
-                    CollectNeededRecursive(node.Children[i], ownedInSubtree, needed, ignoreProcessingTool);
-                }
+                AddNeeded(needed, node.Id, node.NeededCount);
                 return;
             }
 
-            if (node.Children == null)
+            if (action == NeedCollectAction.Stop || node.Children == null)
             {
-                if (node.IsMaterial)
-                {
-                    AddNeeded(needed, node.Id, node.NeededCount);
-                }
                 return;
             }
 
@@ -532,13 +510,14 @@ namespace Game
                 return;
             }
 
-            if (node.IsBaseMaterial)
+            NeedCollectAction action = RecipeNeedCollectionRule.EvaluateBase(node);
+            if (action == NeedCollectAction.AddCurrent)
             {
                 AddNeeded(needed, node.Id, node.NeededCount);
                 return;
             }
 
-            if (node.Children == null)
+            if (action == NeedCollectAction.Stop || node.Children == null)
             {
                 return;
             }
