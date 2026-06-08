@@ -11,6 +11,8 @@ namespace Game
         Dictionary<int, int> ownedItems = new Dictionary<int, int>
         {
             { 200001, 1 },
+            { 201501, 17 },
+            { 201504, 1 },
         };
 
         private void Awake()
@@ -28,12 +30,25 @@ namespace Game
             var treeStr = RecipeBook.PrintTree(root);
             var needed = RecipeBook.CollectNeededItems(root);
             var baseNeeded = RecipeBook.CollectNeededBaseMaterials(root);
+            Debug.Log("<color=red>============ Run Demo ============</color>");
             Debug.Log(treeStr);
             Debug.Log(FormatNeeded("Needed", needed));
             Debug.Log(FormatNeeded("Base Needed", baseNeeded));
         }
 
-        [ContextMenu("RunOptimizer")]
+        [ContextMenu("Run With Unused Owned")]
+        public void RunWithUnusedOwned()
+        {
+            RecipeBook.TryRecipeResolver = RecipeBookTestProvider.TryResolve;
+            var root = RecipeBook.BuildRecipeTree(ItemId, 1);
+            var needed = RecipeBook.CollectNeededItemsWithUnusedOwned(root, ownedItems, out var unusedOwned);
+            Debug.Log("<color=red>============ Run With Unused Owned Demo ============</color>");
+            Debug.Log(RecipeBook.PrintTree(root));
+            Debug.Log(FormatNeeded("Needed", needed));
+            Debug.Log(FormatNeeded("Unused Owned", unusedOwned));
+        }
+
+        [ContextMenu("Run Optimizer")]
         public void RunOptimizer()
         {
             RecipeBook.TryRecipeResolver = RecipeBookTestProvider.TryResolve;
@@ -41,13 +56,26 @@ namespace Game
             var treeStr = RecipeBook.PrintTree(root);
             var needed = RecipeBookOptimizer.CollectNeededItems(root);
             var baseNeeded = RecipeBookOptimizer.CollectNeededBaseMaterials(root);
+            Debug.Log("<color=red>============ Run Optimizer Demo ============</color>");
             Debug.Log(treeStr);
             Debug.Log(FormatNeeded("Needed", needed));
             Debug.Log(FormatNeeded("Base Needed", baseNeeded));
         }
+
+        [ContextMenu("Run Optimizer With Unused Owned")]
+        public void RunOptimizerWithUnusedOwned()
+        {
+            RecipeBook.TryRecipeResolver = RecipeBookTestProvider.TryResolve;
+            var root = RecipeBook.BuildRecipeTree(ItemId, 1);
+            var needed = RecipeBookOptimizer.CollectNeededItemsWithUnusedOwned(root, ownedItems, out var unusedOwned);
+            Debug.Log("<color=red>============ Run Optimizer With Unused Owned Demo ============</color>");
+            Debug.Log(RecipeBook.PrintTree(root));
+            Debug.Log(FormatNeeded("Optimizer Needed", needed));
+            Debug.Log(FormatNeeded("Optimizer Unused Owned", unusedOwned));
+        }
         
-        [ContextMenu("Run Compact Demo")]
-        public void RunCompactDemo()
+        [ContextMenu("Run Compact")]
+        public void RunCompact()
         {
             RecipeBookCompact.TryRecipeResolver = RecipeBookTestProvider.TryResolve;
             var root = RecipeBookCompact.BuildTree(ItemId);
@@ -55,12 +83,24 @@ namespace Game
 
             var needed = RecipeBookCompact.CollectNeeded(root);
             var baseNeeded = RecipeBookCompact.CollectNeededBase(root);
-
+            Debug.Log("<color=red>============ Run Compact Demo ============</color>");
             Debug.Log(RecipeBookCompact.PrintTree(root));
             Debug.Log(FormatNeeded("Compact Needed", needed));
             Debug.Log(FormatNeeded("Compact Base Needed", baseNeeded));
 
             //RunCompactRegression();
+        }
+
+        [ContextMenu("Run Compact With Unused Owned")]
+        public void RunCompactWithUnusedOwned()
+        {
+            RecipeBookCompact.TryRecipeResolver = RecipeBookTestProvider.TryResolve;
+            var root = RecipeBookCompact.BuildTree(ItemId);
+            var needed = RecipeBookCompact.CollectNeededWithUnusedOwned(root, ownedItems, out var unusedOwned);
+            Debug.Log("<color=red>============ Run Compact With Unused Owned Demo ============</color>");
+            Debug.Log(RecipeBookCompact.PrintTree(root));
+            Debug.Log(FormatNeeded("Compact Needed", needed));
+            Debug.Log(FormatNeeded("Compact Unused Owned", unusedOwned));
         }
         
         
