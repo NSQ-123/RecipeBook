@@ -84,11 +84,37 @@ namespace Game
 
         public static void MarkOwned(CompactNode root, IDictionary<int, int> owned)
         {
-            var remaining = owned == null
-                ? new Dictionary<int, int>()
-                : new Dictionary<int, int>(owned);
+            Dictionary<int, int> remaining = CreateRemainingOwnedMap(owned);
 
             MarkOwnedRecursive(root, remaining, 0);
+        }
+
+        /// <summary>
+        /// Mark ownership and return remaining items that were not consumed by this compact tree.
+        /// </summary>
+        public static void MarkOwned(CompactNode root, IDictionary<int, int> owned, out Dictionary<int, int> unusedOwned)
+        {
+            Dictionary<int, int> remaining = CreateRemainingOwnedMap(owned);
+
+            if (root != null)
+            {
+                MarkOwnedRecursive(root, remaining, 0);
+            }
+
+            unusedOwned = FilterPositiveCounts(remaining);
+        }
+
+        /// <summary>
+        /// Mark using owned items, collect needed items, and return unused owned items.
+        /// </summary>
+        public static Dictionary<int, int> CollectNeededWithUnusedOwned(
+            CompactNode root,
+            IDictionary<int, int> owned,
+            out Dictionary<int, int> unusedOwned,
+            bool ignoreProcessingTool = true)
+        {
+            MarkOwned(root, owned, out unusedOwned);
+            return CollectNeeded(root, ignoreProcessingTool);
         }
 
         public static Dictionary<int, int> CollectNeeded(CompactNode root, bool ignoreProcessingTool = true)
@@ -532,6 +558,27 @@ namespace Game
         private static int CeilDiv(int numerator, int denominator)
         {
             return (numerator + denominator - 1) / denominator;
+        }
+
+        private static Dictionary<int, int> CreateRemainingOwnedMap(IDictionary<int, int> owned)
+        {
+            return owned == null
+                ? new Dictionary<int, int>()
+                : new Dictionary<int, int>(owned);
+        }
+
+        private static Dictionary<int, int> FilterPositiveCounts(Dictionary<int, int> source)
+        {
+            var result = new Dictionary<int, int>();
+            foreach (KeyValuePair<int, int> pair in source)
+            {
+                if (pair.Value > 0)
+                {
+                    result[pair.Key] = pair.Value;
+                }
+            }
+
+            return result;
         }
 
         private static void CollectNeededBaseRecursive(CompactNode node, Dictionary<int, int> needed,

@@ -69,11 +69,37 @@ namespace Game
                 return;
             }
 
-            var remaining = ownedItems == null
-                ? new Dictionary<int, int>()
-                : new Dictionary<int, int>(ownedItems);
+            Dictionary<int, int> remaining = CreateRemainingOwnedMap(ownedItems);
 
             MarkOwnedRecursive(root, remaining, false);
+        }
+
+        /// <summary>
+        /// Mark ownership and return remaining items that were not consumed by this tree.
+        /// </summary>
+        public static void MarkOwnedItems(RecipeNode root, IDictionary<int, int> ownedItems, out Dictionary<int, int> unusedOwnedItems)
+        {
+            var remaining = CreateRemainingOwnedMap(ownedItems);
+
+            if (root != null)
+            {
+                MarkOwnedRecursive(root, remaining, false);
+            }
+
+            unusedOwnedItems = FilterPositiveCounts(remaining);
+        }
+
+        /// <summary>
+        /// Mark using owned items, collect needed items, and return unused owned items.
+        /// </summary>
+        public static Dictionary<int, int> CollectNeededItemsWithUnusedOwned(
+            RecipeNode root,
+            IDictionary<int, int> ownedItems,
+            out Dictionary<int, int> unusedOwnedItems,
+            bool ignoreProcessingTool = true)
+        {
+            MarkOwnedItems(root, ownedItems, out unusedOwnedItems);
+            return CollectNeededItems(root, ignoreProcessingTool);
         }
 
         /// <summary>
@@ -377,6 +403,27 @@ namespace Game
             int current;
             needed.TryGetValue(itemId, out current);
             needed[itemId] = current + count;
+        }
+
+        private static Dictionary<int, int> CreateRemainingOwnedMap(IDictionary<int, int> ownedItems)
+        {
+            return ownedItems == null
+                ? new Dictionary<int, int>()
+                : new Dictionary<int, int>(ownedItems);
+        }
+
+        private static Dictionary<int, int> FilterPositiveCounts(Dictionary<int, int> source)
+        {
+            var result = new Dictionary<int, int>();
+            foreach (KeyValuePair<int, int> pair in source)
+            {
+                if (pair.Value > 0)
+                {
+                    result[pair.Key] = pair.Value;
+                }
+            }
+
+            return result;
         }
 
         private static void CollectNeededBaseRecursive(RecipeNode node, Dictionary<int, int> needed, bool ignoreProcessingTool)

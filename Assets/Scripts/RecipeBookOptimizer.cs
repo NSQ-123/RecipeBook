@@ -37,6 +37,44 @@ namespace Game
             return needed;
         }
 
+        /// <summary>
+        /// Mark using owned items, collect needed items via optimizer, and return unused owned items.
+        /// </summary>
+        public static Dictionary<int, int> CollectNeededItemsWithUnusedOwned(
+            RecipeNode root,
+            IDictionary<int, int> ownedItems,
+            out Dictionary<int, int> unusedOwnedItems,
+            bool ignoreProcessingTool = true)
+        {
+            RecipeBook.MarkOwnedItems(root, ownedItems, out unusedOwnedItems);
+            return CollectNeededItems(root, ignoreProcessingTool);
+        }
+
+        /// <summary>
+        /// Non-alloc variant that reuses temporary containers and fills unused owned items.
+        /// </summary>
+        public static void CollectNeededItemsWithUnusedOwnedNonAlloc(
+            RecipeNode root,
+            IDictionary<int, int> ownedItems,
+            Dictionary<int, int> needed,
+            Dictionary<int, int> unusedOwnedItems,
+            Dictionary<RecipeNode, bool> ownedSubtree,
+            List<RecipeNode> postOrder,
+            Stack<VisitState> stack,
+            bool ignoreProcessingTool = true)
+        {
+            Dictionary<int, int> remaining;
+            RecipeBook.MarkOwnedItems(root, ownedItems, out remaining);
+
+            unusedOwnedItems.Clear();
+            foreach (KeyValuePair<int, int> pair in remaining)
+            {
+                unusedOwnedItems[pair.Key] = pair.Value;
+            }
+
+            CollectNeededItemsNonAlloc(root, needed, ownedSubtree, postOrder, stack, ignoreProcessingTool);
+        }
+
         // Reusable-container version to reduce GC in frequent calls.
         public static void CollectNeededItemsNonAlloc(
             RecipeNode root,
