@@ -6,16 +6,11 @@ namespace Game
 {
     public class Demo : MonoBehaviour
     {
-        public int ItemId = 3004;
+        public int ItemId = 500058;
         
         Dictionary<int, int> ownedItems = new Dictionary<int, int>
         {
-            { 1001, 1 },
-            { 1002, 1 },
-            { 1003, 1 },
-            { 3003, 1 },
-            { 3002, 1 },
-            { 2002, 1 },
+            { 200001, 1 },
         };
 
         private void Awake()
@@ -50,6 +45,26 @@ namespace Game
             Debug.Log(FormatNeeded("Needed", needed));
             Debug.Log(FormatNeeded("Base Needed", baseNeeded));
         }
+        
+        [ContextMenu("Run Compact Demo")]
+        public void RunCompactDemo()
+        {
+            RecipeBookCompact.TryRecipeResolver = RecipeBookTestProvider.TryResolve;
+            var root = RecipeBookCompact.BuildTree(ItemId);
+            RecipeBookCompact.MarkOwned(root, ownedItems);
+
+            var needed = RecipeBookCompact.CollectNeeded(root);
+            var baseNeeded = RecipeBookCompact.CollectNeededBase(root);
+
+            Debug.Log(RecipeBookCompact.PrintTree(root));
+            Debug.Log(FormatNeeded("Compact Needed", needed));
+            Debug.Log(FormatNeeded("Compact Base Needed", baseNeeded));
+
+            //RunCompactRegression();
+        }
+        
+        
+        
         
         
         [ContextMenu("Run Regression")]
