@@ -4,7 +4,7 @@ namespace Game
 {
     public static class RecipeBookTestProvider
     {
-        private static readonly Dictionary<int, RecipeDefinition> s_testRecipes = CreateRecipes();
+        private static readonly Dictionary<int, RecipeDefinition> s_testRecipes = CreateRecipes1();
 
 
         public static bool TryResolve(int itemId, out RecipeDefinition recipe)
@@ -53,6 +53,37 @@ namespace Game
                 map[itemId] = new RecipeDefinition(isMaterial, false, new Ingredient(itemId - 1, 2));
             }
         }
+
+        private static Dictionary<int, RecipeDefinition> CreateRecipes1()
+        {
+            var map = new Dictionary<int, RecipeDefinition>();
+
+            map[500058] = new RecipeDefinition(false, false,
+                new Ingredient(201505, 1),
+                new Ingredient(200703, 1),
+                new Ingredient(200802, 1));
+
+            map[201505] = new RecipeDefinition(true, false, new Ingredient(201504, 2));
+            map[201504] = new RecipeDefinition(true, false, new Ingredient(201503, 2));
+            map[201503] = new RecipeDefinition(true, false, new Ingredient(201502, 2));
+            map[201502] = new RecipeDefinition(true, false, new Ingredient(201501, 2));
+            map[201501] = new RecipeDefinition(true, true);
+
+            map[200703] = new RecipeDefinition(true, false, new Ingredient(200702, 2));
+            map[200702] = new RecipeDefinition(true, false, new Ingredient(200701, 2));
+            map[200701] = new RecipeDefinition(true, true);
+
+            map[200802] = new RecipeDefinition(false, false, new Ingredient(200801, 2));
+            map[200801] = new RecipeDefinition(true, true, new Ingredient(200702, 1));
+
+            map[200003] = new RecipeDefinition(true, false, new Ingredient(200002, 2));
+            map[200002] = new RecipeDefinition(true, false, new Ingredient(200001, 2));
+            map[200001] = new RecipeDefinition(true, true);
+
+            return map;
+        }
+        
+        
     }
 }
 
