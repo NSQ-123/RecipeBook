@@ -451,6 +451,7 @@ namespace Game
                 }
             }
 
+            // Cache "does this subtree contain any owned node" for fast lookup in need collection.
             map[node] = hasOwned;
             return hasOwned;
         }
@@ -471,17 +472,38 @@ namespace Game
                 return;
             }
 
+            // True means current node or any descendant is already owned.
+            // We must keep drilling down to avoid over-counting missing requirements.
             bool hasOwned = ownedInSubtree[node];
             if (!hasOwned)
             {
-                // If nothing owned in subtree, current node itself is the requirement boundary.
-                AddNeeded(needed, node.Id, node.NeededCount);
+                // Requirement boundary is only valid for material items.
+                if (node.IsMaterial)
+                {
+                    AddNeeded(needed, node.Id, node.NeededCount);
+                    return;
+                }
+
+                // Non-material outputs are not collectible requirements themselves.
+                // Continue to children and gather actual material requirements.
+                if (node.Children == null)
+                {
+                    return;
+                }
+
+                for (int i = 0; i < node.Children.Count; i++)
+                {
+                    CollectNeededRecursive(node.Children[i], ownedInSubtree, needed, ignoreProcessingTool);
+                }
                 return;
             }
 
             if (node.Children == null)
             {
-                AddNeeded(needed, node.Id, node.NeededCount);
+                if (node.IsMaterial)
+                {
+                    AddNeeded(needed, node.Id, node.NeededCount);
+                }
                 return;
             }
 

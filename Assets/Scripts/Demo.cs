@@ -31,13 +31,27 @@ namespace Game
             RecipeBook.TryRecipeResolver = RecipeBookTestProvider.TryResolve;
             var root = RecipeBook.BuildRecipeTree(ItemId,1,ownedItems);
             var treeStr = RecipeBook.PrintTree(root);
+            var needed = RecipeBook.CollectNeededItems(root);
+            var baseNeeded = RecipeBook.CollectNeededBaseMaterials(root);
+            Debug.Log(treeStr);
+            Debug.Log(FormatNeeded("Needed", needed));
+            Debug.Log(FormatNeeded("Base Needed", baseNeeded));
+        }
+
+        [ContextMenu("RunOptimizer")]
+        public void RunOptimizer()
+        {
+            RecipeBook.TryRecipeResolver = RecipeBookTestProvider.TryResolve;
+            var root = RecipeBook.BuildRecipeTree(ItemId,1,ownedItems);
+            var treeStr = RecipeBook.PrintTree(root);
             var needed = RecipeBookOptimizer.CollectNeededItems(root);
             var baseNeeded = RecipeBookOptimizer.CollectNeededBaseMaterials(root);
             Debug.Log(treeStr);
             Debug.Log(FormatNeeded("Needed", needed));
             Debug.Log(FormatNeeded("Base Needed", baseNeeded));
         }
-
+        
+        
         [ContextMenu("Run Regression")]
         public void RunRegression()
         {

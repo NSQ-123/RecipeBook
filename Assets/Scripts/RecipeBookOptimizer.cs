@@ -108,15 +108,33 @@ namespace Game
                 ownedSubtree.TryGetValue(node, out hasOwnedInSubtree);
                 if (!hasOwnedInSubtree)
                 {
-                    // No owned item exists in this subtree, so this node itself is needed.
-                    AddNeeded(needed, node.Id, node.NeededCount);
+                    // Boundary collection only applies to material nodes.
+                    if (node.IsMaterial)
+                    {
+                        AddNeeded(needed, node.Id, node.NeededCount);
+                        continue;
+                    }
+
+                    // Non-material outputs are not needed themselves; continue to inputs.
+                    if (node.Children == null || node.Children.Count == 0)
+                    {
+                        continue;
+                    }
+
+                    for (int i = node.Children.Count - 1; i >= 0; i--)
+                    {
+                        stack.Push(new VisitState(node.Children[i], false));
+                    }
                     continue;
                 }
 
                 if (node.Children == null || node.Children.Count == 0)
                 {
-                    // Leaf and still not owned -> directly needed.
-                    AddNeeded(needed, node.Id, node.NeededCount);
+                    // Leaf and still not owned -> only material leaves are needed.
+                    if (node.IsMaterial)
+                    {
+                        AddNeeded(needed, node.Id, node.NeededCount);
+                    }
                     continue;
                 }
 
