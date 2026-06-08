@@ -99,9 +99,9 @@ namespace Game
                 return needed;
             }
 
-            var hasOwnedSubtree = new Dictionary<CompactNode, bool>();
-            BuildHasOwnedMap(root, hasOwnedSubtree);
-            CollectNeededRecursive(root, hasOwnedSubtree, needed, ignoreProcessingTool);
+            var ownedDescendantInfluence = new Dictionary<CompactNode, int>();
+            BuildOwnedDescendantInfluenceMap(root, ownedDescendantInfluence, 0);
+            CollectNeededRecursive(root, ownedDescendantInfluence, needed, ignoreProcessingTool, root.NeededCount);
             return needed;
         }
 
@@ -373,26 +373,88 @@ namespace Game
             }
         }
 
-        private static bool BuildHasOwnedMap(CompactNode node, Dictionary<CompactNode, bool> map)
+        // For each node, compute how many of this node's units are affected by ownership in descendants,
+        // excluding ownership that is only propagated from this node itself.
+        // Return value is independent-owned influence in this whole subtree for parent conversion.
+        private static int BuildOwnedDescendantInfluenceMap(
+            CompactNode node,
+            Dictionary<CompactNode, int> map,
+            int ownedProvidedByParent)
         {
-            bool hasOwned = node.OwnedCount > 0;
+            int selfIndependentOwned = node.OwnedCount - ownedProvidedByParent;
+            if (selfIndependentOwned < 0)
+            {
+                selfIndependentOwned = 0;
+            }
+
+            if (selfIndependentOwned > node.NeededCount)
+            {
+                selfIndependentOwned = node.NeededCount;
+            }
+
+            int descendantInfluence = 0;
 
             if (node.Children != null)
             {
+                int fullOwned = node.OwnedCount;
+                if (fullOwned > node.NeededCount)
+                {
+                    fullOwned = node.NeededCount;
+                }
+
                 for (int i = 0; i < node.Children.Count; i++)
                 {
-                    hasOwned = BuildHasOwnedMap(node.Children[i], map) || hasOwned;
+                    CompactNode child = node.Children[i];
+                    if (child.NeededCount <= 0 || node.NeededCount <= 0)
+                    {
+                        continue;
+                    }
+
+                    int childOwnedProvidedByNode = fullOwned * child.NeededCount / node.NeededCount;
+                    int childIndependentInfluence = BuildOwnedDescendantInfluenceMap(child, map, childOwnedProvidedByNode);
+
+                    if (childIndependentInfluence <= 0)
+                    {
+                        continue;
+                    }
+
+                    int parentAffectedUnits = CeilDiv(childIndependentInfluence * node.NeededCount, child.NeededCount);
+                    if (parentAffectedUnits > descendantInfluence)
+                    {
+                        descendantInfluence = parentAffectedUnits;
+                    }
                 }
             }
 
-            map[node] = hasOwned;
-            return hasOwned;
+            if (descendantInfluence > node.NeededCount)
+            {
+                descendantInfluence = node.NeededCount;
+            }
+
+            map[node] = descendantInfluence;
+
+            int independentSubtreeInfluence = selfIndependentOwned;
+            if (descendantInfluence > independentSubtreeInfluence)
+            {
+                independentSubtreeInfluence = descendantInfluence;
+            }
+
+            if (independentSubtreeInfluence > node.NeededCount)
+            {
+                independentSubtreeInfluence = node.NeededCount;
+            }
+
+            return independentSubtreeInfluence;
         }
 
-        private static void CollectNeededRecursive(CompactNode node, Dictionary<CompactNode, bool> hasOwnedSubtree,
-            Dictionary<int, int> needed, bool ignoreProcessingTool)
+        private static void CollectNeededRecursive(
+            CompactNode node,
+            Dictionary<CompactNode, int> ownedDescendantInfluence,
+            Dictionary<int, int> needed,
+            bool ignoreProcessingTool,
+            int scopeNeededCount)
         {
-            if (node == null)
+            if (node == null || scopeNeededCount <= 0)
             {
                 return;
             }
@@ -402,28 +464,74 @@ namespace Game
                 return;
             }
 
-            if (node.IsFullyOwned)
+            int ownedInScope = node.OwnedCount;
+            if (ownedInScope > scopeNeededCount)
             {
-                return;
+                ownedInScope = scopeNeededCount;
             }
 
-            bool hasOwned = hasOwnedSubtree[node];
-            if (!hasOwned)
+            int unownedInScope = scopeNeededCount - ownedInScope;
+            if (unownedInScope <= 0)
             {
-                AddNeeded(needed, node.Id, node.NeededCount - node.OwnedCount);
                 return;
             }
 
             if (node.Children == null || node.Children.Count == 0)
             {
-                AddNeeded(needed, node.Id, node.NeededCount - node.OwnedCount);
+                if (node.IsMaterial)
+                {
+                    AddNeeded(needed, node.Id, unownedInScope);
+                }
+                return;
+            }
+
+            int descendantInfluence;
+            ownedDescendantInfluence.TryGetValue(node, out descendantInfluence);
+            if (descendantInfluence > unownedInScope)
+            {
+                descendantInfluence = unownedInScope;
+            }
+
+            if (descendantInfluence <= 0)
+            {
+                if (node.IsMaterial)
+                {
+                    AddNeeded(needed, node.Id, unownedInScope);
+                    return;
+                }
+            }
+
+            if (node.IsMaterial)
+            {
+                int boundaryCount = unownedInScope - descendantInfluence;
+                if (boundaryCount > 0)
+                {
+                    AddNeeded(needed, node.Id, boundaryCount);
+                }
+            }
+
+            int drillDownScope = node.IsMaterial ? descendantInfluence : unownedInScope;
+            if (drillDownScope <= 0)
+            {
                 return;
             }
 
             for (int i = 0; i < node.Children.Count; i++)
             {
-                CollectNeededRecursive(node.Children[i], hasOwnedSubtree, needed, ignoreProcessingTool);
+                CompactNode child = node.Children[i];
+                if (child.NeededCount <= 0 || node.NeededCount <= 0)
+                {
+                    continue;
+                }
+
+                int childScope = CeilDiv(drillDownScope * child.NeededCount, node.NeededCount);
+                CollectNeededRecursive(child, ownedDescendantInfluence, needed, ignoreProcessingTool, childScope);
             }
+        }
+
+        private static int CeilDiv(int numerator, int denominator)
+        {
+            return (numerator + denominator - 1) / denominator;
         }
 
         private static void CollectNeededBaseRecursive(CompactNode node, Dictionary<int, int> needed,
