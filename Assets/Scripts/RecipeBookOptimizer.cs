@@ -1,8 +1,7 @@
   using System.Collections.Generic;
 
-namespace Game
-{
-    // Optimization layer for RecipeBook. Keeps RecipeBook untouched and reusable.
+
+   // Optimization layer for RecipeBook. Keeps RecipeBook untouched and reusable.
     public static class RecipeBookOptimizer
     {
         /// <summary>
@@ -175,6 +174,115 @@ namespace Game
         }
 
         /// <summary>
+        /// Collect needed items under a score/count/reward-pool budget constraint (iterative DFS).
+        /// Items that cannot be collected at their current level are drilled down to child ingredients.
+        /// </summary>
+        public static Dictionary<int, int> CollectNeededWithBudget(
+            RecipeNode root,
+            RecipeCollectBudget budget,
+            bool ignoreProcessingTool = true)
+        {
+            var needed = new Dictionary<int, int>();
+            if (root == null || budget == null || budget.IsExhausted)
+            {
+                return needed;
+            }
+
+            var ownedSubtree = new Dictionary<RecipeNode, bool>();
+            var postOrder = new List<RecipeNode>();
+            var stack = new Stack<VisitState>();
+
+            // Pass 1: build owned-in-subtree map (same strategy as CollectNeededItemsNonAlloc).
+            BuildPostOrder(root, postOrder, stack);
+            for (int i = 0; i < postOrder.Count; i++)
+            {
+                RecipeNode node = postOrder[i];
+                if (ignoreProcessingTool && node.IsProcessingTool)
+                {
+                    ownedSubtree[node] = false;
+                    continue;
+                }
+
+                bool hasOwned = node.IsOwn;
+                if (node.Children != null)
+                {
+                    for (int c = 0; c < node.Children.Count; c++)
+                    {
+                        if (ownedSubtree[node.Children[c]])
+                        {
+                            hasOwned = true;
+                            break;
+                        }
+                    }
+                }
+
+                ownedSubtree[node] = hasOwned;
+            }
+
+            // Pass 2: iterative DFS collection with budget constraint.
+            stack.Clear();
+            stack.Push(new VisitState(root, false));
+            while (stack.Count > 0 && !budget.IsExhausted)
+            {
+                VisitState state = stack.Pop();
+                RecipeNode node = state.Node;
+
+                if (ignoreProcessingTool && node.IsProcessingTool)
+                {
+                    continue;
+                }
+
+                if (node.IsOwn)
+                {
+                    continue;
+                }
+
+                bool hasOwnedInSubtree;
+                ownedSubtree.TryGetValue(node, out hasOwnedInSubtree);
+                NeedCollectAction action = RecipeNeedCollectionRule.Evaluate(node, hasOwnedInSubtree);
+
+                if (action == NeedCollectAction.AddCurrent)
+                {
+                    int collected = budget.TryCollect(node.Id, node.Score, node.NeededCount);
+                    if (collected > 0)
+                    {
+                        AddNeeded(needed, node.Id, collected);
+                    }
+                    else if (node.Children != null && node.Children.Count > 0)
+                    {
+                        // Can't collect current reward -> drill to ingredients.
+                        PushChildrenByBudgetPriority(node, ownedSubtree, stack);
+                    }
+
+                    continue;
+                }
+
+                if (action == NeedCollectAction.Stop || node.Children == null || node.Children.Count == 0)
+                {
+                    continue;
+                }
+
+                PushChildrenByBudgetPriority(node, ownedSubtree, stack);
+            }
+
+            return needed;
+        }
+
+        /// <summary>
+        /// Mark ownership first, then collect needed items under budget constraint.
+        /// </summary>
+        public static Dictionary<int, int> CollectNeededWithBudget(
+            RecipeNode root,
+            IDictionary<int, int> ownedItems,
+            RecipeCollectBudget budget,
+            out Dictionary<int, int> unusedOwnedItems,
+            bool ignoreProcessingTool = true)
+        {
+            RecipeBook.MarkOwnedItems(root, ownedItems, out unusedOwnedItems);
+            return CollectNeededWithBudget(root, budget, ignoreProcessingTool);
+        }
+
+        /// <summary>
         /// Collect only missing base materials.
         /// </summary>
         public static void CollectNeededBaseMaterialsNonAlloc(
@@ -227,6 +335,66 @@ namespace Game
         }
 
         /// <summary>
+        /// Push children so stack pops non-owned-influenced branches first.
+        /// </summary>
+        private static void PushChildrenByBudgetPriority(
+            RecipeNode node,
+            Dictionary<RecipeNode, bool> ownedSubtree,
+            Stack<VisitState> stack)
+        {
+            if (node.Children == null || node.Children.Count == 0)
+            {
+                return;
+            }
+
+            // Keep original recipe/input order globally.
+            // Inside same-item sibling runs, pop non-owned-influenced first.
+            var ordered = new List<RecipeNode>(node.Children.Count);
+            int index = 0;
+            while (index < node.Children.Count)
+            {
+                int runEnd = index + 1;
+                int runItemId = node.Children[index].Id;
+                while (runEnd < node.Children.Count && node.Children[runEnd].Id == runItemId)
+                {
+                    runEnd++;
+                }
+
+                AppendChildRun(ordered, node.Children, index, runEnd, false, ownedSubtree);
+                AppendChildRun(ordered, node.Children, index, runEnd, true, ownedSubtree);
+
+                index = runEnd;
+            }
+
+            for (int i = ordered.Count - 1; i >= 0; i--)
+            {
+                stack.Push(new VisitState(ordered[i], false));
+            }
+        }
+
+        private static void AppendChildRun(
+            List<RecipeNode> ordered,
+            List<RecipeNode> children,
+            int start,
+            int end,
+            bool targetOwned,
+            Dictionary<RecipeNode, bool> ownedSubtree)
+        {
+            for (int i = start; i < end; i++)
+            {
+                RecipeNode child = children[i];
+                bool childOwned;
+                ownedSubtree.TryGetValue(child, out childOwned);
+                if (childOwned != targetOwned)
+                {
+                    continue;
+                }
+
+                ordered.Add(child);
+            }
+        }
+
+        /// <summary>
         /// Build post-order list iteratively to avoid recursion stack pressure.
         /// </summary>
         private static void BuildPostOrder(RecipeNode root, List<RecipeNode> postOrder, Stack<VisitState> stack)
@@ -263,6 +431,7 @@ namespace Game
             }
         }
 
+
         /// <summary>
         /// Accumulate required counts by item id.
         /// </summary>
@@ -273,6 +442,6 @@ namespace Game
             needed[itemId] = current + count;
         }
     }
-}
+
 
 

@@ -1,13 +1,11 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace Game
-{
-    // Compact tree: each ingredient appears once per recipe edge with NeededCount aggregation.
+// Compact tree: each ingredient appears once per recipe edge with NeededCount aggregation.
     // This keeps the existing RecipeBook untouched while testing the single-node+count model.
     public static class RecipeBookCompact
     {
-        private static readonly Stack<CompactNode> s_nodePool = new Stack<CompactNode>(256);
+        private static readonly Stack<RecipeCompactNode> s_nodePool = new Stack<RecipeCompactNode>(256);
         private static readonly Dictionary<int, RecipeDefinition> s_recipes = new Dictionary<int, RecipeDefinition>();
 
         /// <summary>
@@ -17,29 +15,13 @@ namespace Game
 
         public static TryResolveRecipeDelegate TryRecipeResolver;
 
-        public sealed class CompactNode
-        {
-            public int Id;
-            public bool IsMaterial;
-            public bool IsBaseMaterial;
-            public bool IsProcessingTool;
-            public int NeededCount;
-            public int OwnedDirectCount;
-            public int OwnedInheritedCount;
-            public CompactNode Parent;
-            public List<CompactNode> Children;
-
-            public int OwnedCount => OwnedDirectCount + OwnedInheritedCount;
-            public bool IsFullyOwned => OwnedCount >= NeededCount;
-        }
-
         private sealed class BuildContext
         {
-            public readonly Dictionary<int, CompactNode> TemplateCache = new Dictionary<int, CompactNode>();
+            public readonly Dictionary<int, RecipeCompactNode> TemplateCache = new Dictionary<int, RecipeCompactNode>();
             public readonly HashSet<int> Path = new HashSet<int>();
         }
 
-        public static CompactNode BuildTree(int itemId, int amount = 1)
+        public static RecipeCompactNode BuildTree(int itemId, int amount = 1)
         {
             if (amount <= 0)
             {
@@ -51,7 +33,7 @@ namespace Game
         }
 
         // Release a compact tree back to pool after use.
-        public static void ReleaseTree(CompactNode root)
+        public static void ReleaseTree(RecipeCompactNode root)
         {
             if (root == null)
             {
@@ -82,7 +64,7 @@ namespace Game
             s_recipes.Clear();
         }
 
-        public static void MarkOwned(CompactNode root, IDictionary<int, int> owned)
+        public static void MarkOwned(RecipeCompactNode root, IDictionary<int, int> owned)
         {
             Dictionary<int, int> remaining = CreateRemainingOwnedMap(owned);
 
@@ -92,7 +74,7 @@ namespace Game
         /// <summary>
         /// Mark ownership and return remaining items that were not consumed by this compact tree.
         /// </summary>
-        public static void MarkOwned(CompactNode root, IDictionary<int, int> owned, out Dictionary<int, int> unusedOwned)
+        public static void MarkOwned(RecipeCompactNode root, IDictionary<int, int> owned, out Dictionary<int, int> unusedOwned)
         {
             Dictionary<int, int> remaining = CreateRemainingOwnedMap(owned);
 
@@ -108,7 +90,7 @@ namespace Game
         /// Mark using owned items, collect needed items, and return unused owned items.
         /// </summary>
         public static Dictionary<int, int> CollectNeededWithUnusedOwned(
-            CompactNode root,
+            RecipeCompactNode root,
             IDictionary<int, int> owned,
             out Dictionary<int, int> unusedOwned,
             bool ignoreProcessingTool = true)
@@ -117,7 +99,29 @@ namespace Game
             return CollectNeeded(root, ignoreProcessingTool);
         }
 
-        public static Dictionary<int, int> CollectNeeded(CompactNode root, bool ignoreProcessingTool = true)
+        public static Dictionary<int, int> CollectNeededBaseWithUnusedOwned(
+            RecipeCompactNode root,
+            IDictionary<int, int> owned,
+            out Dictionary<int, int> unusedOwned,
+            bool ignoreProcessingTool = true)
+        {
+            MarkOwned(root, owned, out unusedOwned);
+            return CollectNeededBase(root, ignoreProcessingTool);
+        }
+
+        public static (Dictionary<int, int> Needed, Dictionary<int, int> BaseNeeded, Dictionary<int, int> UnusedOwned)
+            CollectNeededAndBaseWithUnusedOwned(
+                RecipeCompactNode root,
+                IDictionary<int, int> owned,
+                bool ignoreProcessingTool = true)
+        {
+            MarkOwned(root, owned, out var unusedOwned);
+            var needed = CollectNeeded(root, ignoreProcessingTool);
+            var baseNeeded = CollectNeededBase(root, ignoreProcessingTool);
+            return (needed, baseNeeded, unusedOwned);
+        }
+
+        public static Dictionary<int, int> CollectNeeded(RecipeCompactNode root, bool ignoreProcessingTool = true)
         {
             var needed = new Dictionary<int, int>();
             if (root == null)
@@ -125,20 +129,57 @@ namespace Game
                 return needed;
             }
 
-            var ownedDescendantInfluence = new Dictionary<CompactNode, int>();
+            var ownedDescendantInfluence = new Dictionary<RecipeCompactNode, int>();
             BuildOwnedDescendantInfluenceMap(root, ownedDescendantInfluence, 0);
-            CollectNeededRecursive(root, ownedDescendantInfluence, needed, ignoreProcessingTool, root.NeededCount);
+            CollectNeededRecursive(root, ownedDescendantInfluence, needed, ignoreProcessingTool, root.NeededCount, true);
             return needed;
         }
 
-        public static Dictionary<int, int> CollectNeededBase(CompactNode root, bool ignoreProcessingTool = true)
+        public static Dictionary<int, int> CollectNeededBase(RecipeCompactNode root, bool ignoreProcessingTool = true)
         {
             var needed = new Dictionary<int, int>();
             CollectNeededBaseRecursive(root, needed, ignoreProcessingTool);
             return needed;
         }
 
-        public static string PrintTree(CompactNode root)
+        /// <summary>
+        /// Collect needed items under a score/count/reward-pool budget constraint.
+        /// Items that cannot be collected at their current level (wrong pool, no score, insufficient budget)
+        /// are drilled down to their child ingredients recursively.
+        /// </summary>
+        public static Dictionary<int, int> CollectNeededWithBudget(
+            RecipeCompactNode root,
+            RecipeCollectBudget budget,
+            bool ignoreProcessingTool = true)
+        {
+            var needed = new Dictionary<int, int>();
+            if (root == null || budget == null || budget.IsExhausted)
+            {
+                return needed;
+            }
+
+            var ownedDescendantInfluence = new Dictionary<RecipeCompactNode, int>();
+            BuildOwnedDescendantInfluenceMap(root, ownedDescendantInfluence, 0);
+            CollectNeededWithBudgetRecursive(root, ownedDescendantInfluence, needed, ignoreProcessingTool,
+                root.NeededCount, true, budget);
+            return needed;
+        }
+
+        /// <summary>
+        /// Mark ownership first, then collect needed items under budget constraint.
+        /// </summary>
+        public static Dictionary<int, int> CollectNeededWithBudget(
+            RecipeCompactNode root,
+            IDictionary<int, int> owned,
+            RecipeCollectBudget budget,
+            out Dictionary<int, int> unusedOwned,
+            bool ignoreProcessingTool = true)
+        {
+            MarkOwned(root, owned, out unusedOwned);
+            return CollectNeededWithBudget(root, budget, ignoreProcessingTool);
+        }
+
+        public static string PrintTree(RecipeCompactNode root)
         {
             if (root == null)
             {
@@ -150,7 +191,7 @@ namespace Game
             return sb.ToString();
         }
 
-        private static CompactNode BuildNode(int itemId, int amount, BuildContext context)
+        private static RecipeCompactNode BuildNode(int itemId, int amount, BuildContext context)
         {
             if (context.Path.Contains(itemId))
             {
@@ -159,7 +200,7 @@ namespace Game
 
             if (amount == 1)
             {
-                CompactNode cached;
+                RecipeCompactNode cached;
                 if (context.TemplateCache.TryGetValue(itemId, out cached))
                 {
                     return CloneFromTemplate(cached, 1);
@@ -172,11 +213,12 @@ namespace Game
                 throw new KeyNotFoundException("No recipe found for itemId " + itemId + ".");
             }
 
-            CompactNode node = RentNode();
+            RecipeCompactNode node = RentNode();
             node.Id = itemId;
             node.IsMaterial = recipe.IsMaterial;
             node.IsBaseMaterial = recipe.IsBaseMaterial || recipe.Inputs.Count == 0;
             node.IsProcessingTool = recipe.IsProcessingTool;
+            node.Score = recipe.Score;
             node.NeededCount = amount;
 
             if (recipe.Inputs.Count == 0)
@@ -196,7 +238,7 @@ namespace Game
             {
                 Ingredient ingredient = recipe.Inputs[i];
                 int childNeeded = ingredient.Count * amount;
-                CompactNode child = BuildNode(ingredient.ItemId, childNeeded, context);
+                RecipeCompactNode child = BuildNode(ingredient.ItemId, childNeeded, context);
                 child.Parent = node;
                 node.Children.Add(child);
             }
@@ -234,13 +276,14 @@ namespace Game
             return true;
         }
 
-        private static CompactNode CloneFromTemplate(CompactNode source, int neededOverride)
+        private static RecipeCompactNode CloneFromTemplate(RecipeCompactNode source, int neededOverride)
         {
-            CompactNode clone = RentNode();
+            RecipeCompactNode clone = RentNode();
             clone.Id = source.Id;
             clone.IsMaterial = source.IsMaterial;
             clone.IsBaseMaterial = source.IsBaseMaterial;
             clone.IsProcessingTool = source.IsProcessingTool;
+            clone.Score = source.Score;
             clone.NeededCount = neededOverride;
 
             if (source.Children == null || source.Children.Count == 0)
@@ -251,7 +294,7 @@ namespace Game
             EnsureChildrenCapacity(clone, source.Children.Count);
             for (int i = 0; i < source.Children.Count; i++)
             {
-                CompactNode childClone = CloneFromTemplate(source.Children[i], source.Children[i].NeededCount);
+                RecipeCompactNode childClone = CloneFromTemplate(source.Children[i], source.Children[i].NeededCount);
                 childClone.Parent = clone;
                 clone.Children.Add(childClone);
             }
@@ -259,14 +302,15 @@ namespace Game
             return clone;
         }
 
-        private static CompactNode CloneTemplate(CompactNode source, int neededOverride)
+        private static RecipeCompactNode CloneTemplate(RecipeCompactNode source, int neededOverride)
         {
-            var clone = new CompactNode
+            var clone = new RecipeCompactNode
             {
                 Id = source.Id,
                 IsMaterial = source.IsMaterial,
                 IsBaseMaterial = source.IsBaseMaterial,
                 IsProcessingTool = source.IsProcessingTool,
+                Score = source.Score,
                 NeededCount = neededOverride
             };
 
@@ -275,10 +319,10 @@ namespace Game
                 return clone;
             }
 
-            clone.Children = new List<CompactNode>(source.Children.Count);
+            clone.Children = new List<RecipeCompactNode>(source.Children.Count);
             for (int i = 0; i < source.Children.Count; i++)
             {
-                CompactNode childClone = CloneTemplate(source.Children[i], source.Children[i].NeededCount);
+                RecipeCompactNode childClone = CloneTemplate(source.Children[i], source.Children[i].NeededCount);
                 childClone.Parent = clone;
                 clone.Children.Add(childClone);
             }
@@ -286,13 +330,14 @@ namespace Game
             return clone;
         }
 
-        private static CompactNode RentNode()
+        private static RecipeCompactNode RentNode()
         {
-            CompactNode node = s_nodePool.Count > 0 ? s_nodePool.Pop() : new CompactNode();
+            RecipeCompactNode node = s_nodePool.Count > 0 ? s_nodePool.Pop() : new RecipeCompactNode();
             node.Id = 0;
             node.IsMaterial = false;
             node.IsBaseMaterial = false;
             node.IsProcessingTool = false;
+            node.Score = 0f;
             node.NeededCount = 0;
             node.OwnedDirectCount = 0;
             node.OwnedInheritedCount = 0;
@@ -306,11 +351,11 @@ namespace Game
             return node;
         }
 
-        private static void EnsureChildrenCapacity(CompactNode node, int capacity)
+        private static void EnsureChildrenCapacity(RecipeCompactNode node, int capacity)
         {
             if (node.Children == null)
             {
-                node.Children = new List<CompactNode>(capacity);
+                node.Children = new List<RecipeCompactNode>(capacity);
                 return;
             }
 
@@ -320,14 +365,14 @@ namespace Game
             }
         }
 
-        private static void ReturnNodeRecursive(CompactNode root)
+        private static void ReturnNodeRecursive(RecipeCompactNode root)
         {
-            var stack = new Stack<CompactNode>();
+            var stack = new Stack<RecipeCompactNode>();
             stack.Push(root);
 
             while (stack.Count > 0)
             {
-                CompactNode node = stack.Pop();
+                RecipeCompactNode node = stack.Pop();
 
                 if (node.Children != null)
                 {
@@ -342,12 +387,13 @@ namespace Game
                 node.Parent = null;
                 node.OwnedDirectCount = 0;
                 node.OwnedInheritedCount = 0;
+                node.Score = 0f;
                 node.NeededCount = 0;
                 s_nodePool.Push(node);
             }
         }
 
-        private static void MarkOwnedRecursive(CompactNode node, Dictionary<int, int> remaining, int inheritedOwned)
+        private static void MarkOwnedRecursive(RecipeCompactNode node, Dictionary<int, int> remaining, int inheritedOwned)
         {
             if (node == null)
             {
@@ -387,7 +433,7 @@ namespace Game
 
             for (int i = 0; i < node.Children.Count; i++)
             {
-                CompactNode child = node.Children[i];
+                RecipeCompactNode child = node.Children[i];
 
                 // Child need is scaled from parent need when building compact tree.
                 // Inherited ownership must use the same ratio to stay equivalent to expanded-tree behavior.
@@ -403,8 +449,8 @@ namespace Game
         // excluding ownership that is only propagated from this node itself.
         // Return value is independent-owned influence in this whole subtree for parent conversion.
         private static int BuildOwnedDescendantInfluenceMap(
-            CompactNode node,
-            Dictionary<CompactNode, int> map,
+            RecipeCompactNode node,
+            Dictionary<RecipeCompactNode, int> map,
             int ownedProvidedByParent)
         {
             int selfIndependentOwned = node.OwnedCount - ownedProvidedByParent;
@@ -430,7 +476,7 @@ namespace Game
 
                 for (int i = 0; i < node.Children.Count; i++)
                 {
-                    CompactNode child = node.Children[i];
+                    RecipeCompactNode child = node.Children[i];
                     if (child.NeededCount <= 0 || node.NeededCount <= 0)
                     {
                         continue;
@@ -474,11 +520,12 @@ namespace Game
         }
 
         private static void CollectNeededRecursive(
-            CompactNode node,
-            Dictionary<CompactNode, int> ownedDescendantInfluence,
+            RecipeCompactNode node,
+            Dictionary<RecipeCompactNode, int> ownedDescendantInfluence,
             Dictionary<int, int> needed,
             bool ignoreProcessingTool,
-            int scopeNeededCount)
+            int scopeNeededCount,
+            bool isRoot)
         {
             if (node == null || scopeNeededCount <= 0)
             {
@@ -490,7 +537,9 @@ namespace Game
                 return;
             }
 
-            int ownedInScope = node.OwnedCount;
+            // Scope here represents the unresolved branch only, so inherited ownership from parent
+            // should not be deducted again in this scope.
+            int ownedInScope = node.OwnedDirectCount;
             if (ownedInScope > scopeNeededCount)
             {
                 ownedInScope = scopeNeededCount;
@@ -529,6 +578,27 @@ namespace Game
 
             if (node.IsMaterial)
             {
+                if (isRoot)
+                {
+                    // Align with RecipeBook root behavior: when root has any owned-in-subtree,
+                    // traverse children for the whole unresolved root scope instead of adding root boundary.
+                    int rootDrillScope = unownedInScope;
+                    for (int i = 0; i < node.Children.Count; i++)
+                    {
+                        RecipeCompactNode child = node.Children[i];
+                        if (child.NeededCount <= 0 || node.NeededCount <= 0)
+                        {
+                            continue;
+                        }
+
+                        int childScope = CeilDiv(rootDrillScope * child.NeededCount, node.NeededCount);
+                        CollectNeededRecursive(child, ownedDescendantInfluence, needed, ignoreProcessingTool, childScope,
+                            false);
+                    }
+
+                    return;
+                }
+
                 int boundaryCount = unownedInScope - descendantInfluence;
                 if (boundaryCount > 0)
                 {
@@ -544,14 +614,14 @@ namespace Game
 
             for (int i = 0; i < node.Children.Count; i++)
             {
-                CompactNode child = node.Children[i];
+                RecipeCompactNode child = node.Children[i];
                 if (child.NeededCount <= 0 || node.NeededCount <= 0)
                 {
                     continue;
                 }
 
                 int childScope = CeilDiv(drillDownScope * child.NeededCount, node.NeededCount);
-                CollectNeededRecursive(child, ownedDescendantInfluence, needed, ignoreProcessingTool, childScope);
+                CollectNeededRecursive(child, ownedDescendantInfluence, needed, ignoreProcessingTool, childScope, false);
             }
         }
 
@@ -581,7 +651,8 @@ namespace Game
             return result;
         }
 
-        private static void CollectNeededBaseRecursive(CompactNode node, Dictionary<int, int> needed,
+
+        private static void CollectNeededBaseRecursive(RecipeCompactNode node, Dictionary<int, int> needed,
             bool ignoreProcessingTool)
         {
             if (node == null)
@@ -616,7 +687,142 @@ namespace Game
             }
         }
 
-        private static void PrintNode(CompactNode node, string prefix, bool isLast, bool isRoot, StringBuilder sb)
+        // ── Budget-constrained collection helpers ──────────────────────────────
+
+        /// <summary>
+        /// Try to add <paramref name="count"/> units of <paramref name="node"/> to needed via budget.
+        /// Returns the number of units that could NOT be collected (caller should drill to children).
+        /// </summary>
+        private static int AddNeededWithBudget(
+            Dictionary<int, int> needed,
+            RecipeCompactNode node,
+            int count,
+            RecipeCollectBudget budget)
+        {
+            if (count <= 0) return 0;
+            int collected = budget.TryCollect(node.Id, node.Score, count);
+            if (collected > 0)
+            {
+                AddNeeded(needed, node.Id, collected);
+            }
+
+            return count - collected;
+        }
+
+        private static void DrillChildrenWithBudget(
+            RecipeCompactNode node,
+            Dictionary<RecipeCompactNode, int> ownedDescendantInfluence,
+            Dictionary<int, int> needed,
+            bool ignoreProcessingTool,
+            int drillScope,
+            RecipeCollectBudget budget)
+        {
+            if (node.Children == null || drillScope <= 0) return;
+
+            for (int i = 0; i < node.Children.Count; i++)
+            {
+                if (budget.IsExhausted) return;
+
+                RecipeCompactNode child = node.Children[i];
+                if (child.NeededCount <= 0 || node.NeededCount <= 0) continue;
+
+                int childScope = CeilDiv(drillScope * child.NeededCount, node.NeededCount);
+                CollectNeededWithBudgetRecursive(child, ownedDescendantInfluence, needed,
+                    ignoreProcessingTool, childScope, false, budget);
+            }
+        }
+
+        private static void CollectNeededWithBudgetRecursive(
+            RecipeCompactNode node,
+            Dictionary<RecipeCompactNode, int> ownedDescendantInfluence,
+            Dictionary<int, int> needed,
+            bool ignoreProcessingTool,
+            int scopeNeededCount,
+            bool isRoot,
+            RecipeCollectBudget budget)
+        {
+            if (node == null || scopeNeededCount <= 0 || budget.IsExhausted) return;
+            if (ignoreProcessingTool && node.IsProcessingTool) return;
+
+            int ownedInScope = node.OwnedDirectCount;
+            if (ownedInScope > scopeNeededCount) ownedInScope = scopeNeededCount;
+
+            int unownedInScope = scopeNeededCount - ownedInScope;
+            if (unownedInScope <= 0) return;
+
+            // ── Leaf node: collect what budget allows; no children to fall back on ──
+            if (node.Children == null || node.Children.Count == 0)
+            {
+                if (node.IsMaterial)
+                {
+                    AddNeededWithBudget(needed, node, unownedInScope, budget);
+                }
+
+                return;
+            }
+
+            int descendantInfluence;
+            ownedDescendantInfluence.TryGetValue(node, out descendantInfluence);
+            if (descendantInfluence > unownedInScope) descendantInfluence = unownedInScope;
+
+            // ── No owned influence in subtree ──────────────────────────────────────
+            if (descendantInfluence <= 0)
+            {
+                if (node.IsMaterial)
+                {
+                    // Try to collect at this level; any remainder falls through to children.
+                    int notCollected = AddNeededWithBudget(needed, node, unownedInScope, budget);
+                    if (notCollected > 0 && !budget.IsExhausted)
+                    {
+                        DrillChildrenWithBudget(node, ownedDescendantInfluence, needed,
+                            ignoreProcessingTool, notCollected, budget);
+                    }
+                }
+                else
+                {
+                    DrillChildrenWithBudget(node, ownedDescendantInfluence, needed,
+                        ignoreProcessingTool, unownedInScope, budget);
+                }
+
+                return;
+            }
+
+            // ── Has owned influence in subtree ─────────────────────────────────────
+            if (node.IsMaterial)
+            {
+                if (isRoot)
+                {
+                    // Root: always drill children for the full unowned scope.
+                    DrillChildrenWithBudget(node, ownedDescendantInfluence, needed,
+                        ignoreProcessingTool, unownedInScope, budget);
+                    return;
+                }
+
+                // Boundary units (no owned influence at all) — try to collect at this level.
+                int boundaryCount = unownedInScope - descendantInfluence;
+                int boundaryNotCollected = 0;
+                if (boundaryCount > 0)
+                {
+                    boundaryNotCollected = AddNeededWithBudget(needed, node, boundaryCount, budget);
+                }
+
+                // Drill scope = descendant-influenced units + any boundary units we couldn't collect.
+                int drillDownScope = descendantInfluence + boundaryNotCollected;
+                if (drillDownScope > 0 && !budget.IsExhausted)
+                {
+                    DrillChildrenWithBudget(node, ownedDescendantInfluence, needed,
+                        ignoreProcessingTool, drillDownScope, budget);
+                }
+            }
+            else
+            {
+                // Non-material: always drill.
+                DrillChildrenWithBudget(node, ownedDescendantInfluence, needed,
+                    ignoreProcessingTool, unownedInScope, budget);
+            }
+        }
+
+        private static void PrintNode(RecipeCompactNode node, string prefix, bool isLast, bool isRoot, StringBuilder sb)
         {
             if (!isRoot)
             {
@@ -628,6 +834,8 @@ namespace Game
                 .Append(node.NeededCount)
                 .Append(" [own:")
                 .Append(node.OwnedCount)
+                .Append("] [score:")
+                .Append(node.Score)
                 .Append(']')
                 .Append(node.IsBaseMaterial ? " [base]" : "")
                 .AppendLine();
@@ -657,4 +865,3 @@ namespace Game
             needed[itemId] = current + count;
         }
     }
-}

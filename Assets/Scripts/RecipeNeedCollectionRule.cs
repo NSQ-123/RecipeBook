@@ -1,5 +1,4 @@
-namespace Game
-{
+
     internal enum NeedCollectAction
     {
         Stop,
@@ -42,5 +41,5 @@ namespace Game
             return hasChildren ? NeedCollectAction.TraverseChildren : NeedCollectAction.Stop;
         }
     }
-}
+
 
